@@ -1,0 +1,12 @@
+# Core dependencies - actually used in flux_server.py
+torch>=2.0.0
+diffusers>=0.21.0
+
+# Required by diffusers for FLUX models
+transformers>=4.30.0
+accelerate>=0.20.0
+safetensors>=0.3.1
+
+# Required by transformers for T5 text encoder
+protobuf>=3.20.0
+sentencepiece>=0.1.99
