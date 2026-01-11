@@ -90,6 +90,59 @@ test/
 └── test_helper.exs                 # Test setup, shared fixtures
 ```
 
+### Elixir Code Style (Credo Standards)
+
+**We follow Credo's default rules for consistent, idiomatic Elixir code.**
+
+1. **Control Flow Preferences:**
+   - **`case`** - Most native to BEAM, use for pattern matching on values
+   - **`cond`** - Use for multiple conditions
+   - **`if/else`** - Use when working with booleans (predicates ending in `?`)
+   - **`with`** - Use for chaining operations that can fail
+   - **NEVER `unless`** - Outlawed by Credo, use `if not` instead
+
+2. **When to Use `if/else`:**
+   - ✅ **GOOD**: When you already have a boolean
+     ```elixir
+     if current_user_present? do
+       show_dashboard()
+     else
+       redirect_to_login()
+     end
+     ```
+   - ❌ **BAD**: When pattern matching would be clearer
+     ```elixir
+     if value == {:ok, "foo"} do  # Should use case instead
+       handle_foo()
+     end
+     ```
+
+3. **Pattern Matching Examples:**
+   ```elixir
+   # GOOD: Use case for pattern matching
+   case Nx.type(tensor) do
+     {:u, 8} -> validate_shape(tensor)
+     type -> {:error, "Invalid type: #{inspect(type)}"}
+   end
+
+   # BAD: Using if/else for pattern matching
+   if Nx.type(tensor) == {:u, 8} do
+     validate_shape(tensor)
+   else
+     {:error, "Invalid type"}
+   end
+
+   # NEVER: Using unless
+   unless valid? do  # ❌ Don't do this
+     {:error, "Invalid"}
+   end
+   ```
+
+4. **Credo Integration:**
+   - Run `mix credo` before committing
+   - Fix all warnings
+   - Accept Credo's default styling rules (community standard)
+
 ### Type Safety with Dialyzer
 
 **All functions must have type specs!**
