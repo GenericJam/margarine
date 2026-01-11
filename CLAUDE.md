@@ -4,6 +4,14 @@
 
 ---
 
+## Development Tools
+
+### Semantic Code Search with C-K (seek)
+
+We have `ck` (C-K, pronounced "seek") available for semantic grep - a way to cast a wider net when searching through code. When searching for patterns, consider using `ck` for semantic understanding beyond simple text matching.
+
+---
+
 ## 🚨 CRITICAL: TEST-DRIVEN DEVELOPMENT (TDD) 🚨
 
 **WE ARE PRACTICING TDD ON THIS PROJECT. NO EXCEPTIONS.**
@@ -278,6 +286,77 @@ Because it's a butter substitute, just like this is a Python substitute for Elix
    - Margarine remains agnostic to backend choice
 6. **Streaming Results**: Return intermediate images during generation (denoising steps)
 7. **Production Ready**: Proper error handling, telemetry, and documentation
+8. **Modular Schedulers & Pipelines**: Following the `imagine` architecture pattern
+   - Schedulers are generalized and composable
+   - Mix and match schedulers with different algorithms
+   - Clean separation between scheduling logic and model inference
+   - Support for multiple scheduler types (Euler, DDIM, DPM++, etc.)
+
+## Python Installation Strategy
+
+**Approach: Automatic via Pythonx.uv_init() (Zero User Configuration)**
+
+Margarine uses `Pythonx.uv_init()` called during `Application.start/2` to:
+1. Automatically download and install Python (>=3.11) via UV
+2. Create an isolated virtual environment for the project
+3. Install all dependencies (torch, diffusers, transformers, etc.)
+4. Cache everything for subsequent runs (instant startup after first run)
+
+**First Run Experience:**
+```
+[Margarine] Initializing Python environment via UV...
+[Margarine] Downloading Python 3.11... (~100MB, first run only)
+[Margarine] Installing dependencies (torch, diffusers, etc.)... (~500MB)
+[Margarine] This may take 2-5 minutes on first run...
+[Margarine] ✓ Python environment ready!
+```
+
+**Subsequent Runs:**
+Instant - everything is cached.
+
+**Production Deployment Recommendation:**
+Users should do a "warm-up run" when their server starts to ensure the Python environment is already initialized before handling requests. This prevents the first request from timing out during the initial download/install phase.
+
+**Example warm-up pattern:**
+```elixir
+# In your application startup or release scripts
+def warm_up_margarine do
+  # This triggers Pythonx initialization if not already done
+  Margarine.check_environment()
+  # Or run a quick test generation with minimal steps
+end
+```
+
+**TODO: Revisit this recommendation when writing the README to ensure it's still accurate and covers any edge cases discovered during development.**
+
+## Scheduler & Pipeline Architecture
+
+**Goal (from `imagine`):** Create generalized, composable schedulers and pipelines that allow mixing and matching of scheduling algorithms with different models.
+
+**Design Principles:**
+- Schedulers are pure Nx implementations (no Python dependency)
+- Schedulers implement a common behavior/protocol
+- Pipelines coordinate between schedulers and model inference
+- Easy to add new schedulers without touching model code
+- Users can swap schedulers via configuration
+
+**Example Schedulers:**
+- `FluxEuler` - Rectified flow Euler scheduler (current)
+- `DDIM` - Denoising Diffusion Implicit Models (future)
+- `DPMSolverMultistep` - DPM++ scheduler (future)
+- Custom user-defined schedulers
+
+**Reference Implementation:**
+See `~/code/imagine` for working examples of scheduler/pipeline separation and composability. Key files:
+- `lib/imagine/scheduler.ex` - Behavior definition
+- `lib/imagine/schedulers/flux_euler.ex` - Pure Nx implementation
+- `lib/imagine/pipeline.ex` - Coordination logic
+
+This architecture enables:
+- Testing schedulers independently of model loading
+- Swapping schedulers without changing generation code
+- Community contributions of new scheduling algorithms
+- Research and experimentation with novel sampling methods
 
 ## Target User Experience
 
