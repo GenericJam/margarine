@@ -5,6 +5,16 @@ defmodule Margarine.Config do
   Provides default values and validation for image generation parameters.
   """
 
+  @type generation_opts :: [
+          model: :flux_schnell | :flux_dev,
+          steps: pos_integer(),
+          guidance_scale: float(),
+          seed: non_neg_integer() | nil,
+          size: {pos_integer(), pos_integer()}
+        ]
+
+  @type validation_error :: {:error, String.t()}
+
   @defaults %{
     default_model: :flux_schnell,
     default_steps: 4,
@@ -31,6 +41,7 @@ defmodule Margarine.Config do
       iex> Margarine.Config.get(:nonexistent_key, :fallback)
       :fallback
   """
+  @spec get(atom(), any()) :: any()
   def get(key, fallback \\ nil) do
     Application.get_env(:margarine, key, Map.get(@defaults, key, fallback))
   end
@@ -57,6 +68,7 @@ defmodule Margarine.Config do
       iex> Margarine.Config.validate_generation_opts(model: :invalid)
       {:error, "Invalid model: :invalid. Must be one of [:flux_schnell, :flux_dev]"}
   """
+  @spec validate_generation_opts(keyword()) :: {:ok, generation_opts()} | validation_error()
   def validate_generation_opts(opts) when is_list(opts) do
     with {:ok, model} <- validate_model(opts[:model]),
          {:ok, steps} <- validate_steps(opts[:steps]),

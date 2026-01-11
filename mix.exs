@@ -38,6 +38,7 @@ defmodule Margarine.MixProject do
       # Development and testing
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
 
       # Optional backend dependencies (users choose one)
       # Uncomment the backend you want to use:

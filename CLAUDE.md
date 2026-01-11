@@ -90,6 +90,72 @@ test/
 └── test_helper.exs                 # Test setup, shared fixtures
 ```
 
+### Type Safety with Dialyzer
+
+**All functions must have type specs!**
+
+1. **Type Specs Required**
+   - Add `@spec` for all public functions
+   - Add `@type` for custom types
+   - Use proper Elixir typespecs (not just `any()`)
+   - Document complex types
+
+2. **Dialyzer Checks**
+   - Run `mix dialyzer` periodically during development
+   - Add dialyxir to dev dependencies
+   - Fix all dialyzer warnings before merging
+   - No excuses for "dialyzer doesn't understand this"
+
+3. **Example**
+   ```elixir
+   @type generation_opts :: [
+     model: atom(),
+     steps: pos_integer(),
+     guidance_scale: float(),
+     seed: non_neg_integer() | nil,
+     size: {pos_integer(), pos_integer()}
+   ]
+
+   @spec generate(String.t(), generation_opts()) :: {:ok, Nx.Tensor.t()} | {:error, String.t()}
+   def generate(prompt, opts \\ []) do
+     # ...
+   end
+   ```
+
+### Elixir Version Support
+
+**Development and Testing Strategy:**
+
+1. **Primary Development: Elixir 1.19**
+   - Use `mise use elixir@1.19` for daily development
+   - Take advantage of latest features where appropriate
+   - This is what we test most frequently
+
+2. **Minimum Support: Elixir 1.14**
+   - Specified in mix.exs as `elixir: "~> 1.14"`
+   - Test compatibility periodically with `mise use elixir@1.14`
+   - May adjust if 1.14 proves too restrictive
+   - Don't use features introduced after 1.14
+
+3. **CI Testing (future)**
+   - Test on both 1.14 and 1.19 in CI
+   - Ensures compatibility across range
+
+4. **Switching Versions with Mise**
+   ```bash
+   # Development (default)
+   mise use elixir@1.19
+
+   # Compatibility testing
+   mise use elixir@1.14
+   mix deps.get
+   mix test
+   mix dialyzer
+
+   # Switch back
+   mise use elixir@1.19
+   ```
+
 ### Believing in US
 
 **YES, I BELIEVE IN US!** 🚀
@@ -98,6 +164,8 @@ We're going to write solid, well-tested code that:
 - Works reliably
 - Fails gracefully with clear errors
 - Is maintainable by others
+- Has proper type specs and passes Dialyzer
+- Supports Elixir 1.14-1.19
 - Makes us proud to show in job interviews
 - Actually generates beautiful images
 
