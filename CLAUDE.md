@@ -139,9 +139,24 @@ Because it's a butter substitute, just like this is a Python substitute for Elix
 
 1. **Elixir-First API**: Users should feel like they're using an Elixir library, not calling Python
 2. **Zero-Copy Performance**: Leverage Pythonx for efficient tensor transfer between Elixir and Python
-3. **Backend Flexibility**: Support both EMLX (Apple Silicon) and EXLA (CUDA/ROCm) backends
-4. **Streaming Results**: Return intermediate images during generation (denoising steps)
-5. **Production Ready**: Proper error handling, telemetry, and documentation
+3. **Zero Python Dependency Management**:
+   - Use Pythonx (NOT Ports) for Python integration
+   - Python dependencies managed via UV through Pythonx
+   - Users should NEVER have to run `pip install` or manage virtualenvs
+   - Dependencies should be automatically handled on first run
+4. **Memory Safety**:
+   - Check available system memory before loading models
+   - Prevent OOM crashes that could take down the entire machine
+   - Clear memory usage warnings and graceful failures
+   - Model size estimates and minimum memory requirements documented
+5. **Backend Flexibility**: Support multiple Nx backends following Arcana's pattern
+   - EMLX (Apple Silicon/Metal)
+   - EXLA (CUDA/ROCm/CPU via XLA)
+   - Torchx (PyTorch backend via eager execution)
+   - User configures backend in their own `config/config.exs`
+   - Margarine remains agnostic to backend choice
+6. **Streaming Results**: Return intermediate images during generation (denoising steps)
+7. **Production Ready**: Proper error handling, telemetry, and documentation
 
 ## Target User Experience
 
@@ -265,23 +280,45 @@ margarine/
 
 ### Backend Support
 
-**EMLX (Apple Silicon):**
+Following Arcana's pattern, users configure their Nx backend in their own application config. Margarine works with whatever backend is configured.
+
+**EMLX (Apple Silicon/Metal):**
 ```elixir
-config :margarine,
-  backend: {EMLX.Backend, device: :gpu}
+# config/config.exs
+config :nx,
+  default_backend: EMLX.Backend,
+  default_defn_options: [compiler: EMLX]
+
+# mix.exs
+{:emlx, "~> 0.1"}
 ```
 
-**EXLA (CUDA/ROCm):**
+**EXLA (CUDA/ROCm/CPU via XLA):**
 ```elixir
-config :margarine,
-  backend: {EXLA.Backend, client: :cuda}
+# config/config.exs
+config :nx,
+  default_backend: EXLA.Backend,
+  default_defn_options: [compiler: EXLA]
+
+# mix.exs
+{:exla, "~> 0.9"}
 ```
 
-**CPU Fallback:**
+**Torchx (PyTorch backend):**
 ```elixir
-config :margarine,
-  backend: Nx.BinaryBackend
+# config/config.exs
+config :nx,
+  default_backend: {Torchx.Backend, device: :cpu}  # or :cuda, :mps
+
+# mix.exs
+{:torchx, "~> 0.7"}
 ```
+
+**Why this approach?**
+- Users have full control over their compute backend
+- Margarine doesn't force specific hardware requirements
+- Backend dependencies are user-managed (lighter dependency tree)
+- Works with any Nx-compatible backend (future-proof)
 
 ### Error Handling
 
@@ -362,16 +399,28 @@ config :margarine,
 
 ## Dependencies
 
-**Elixir:**
+**Elixir (core dependencies):**
 ```elixir
-{:nx, "~> 0.9"},
-{:emlx, github: "elixir-nx/emlx"},          # Apple Silicon
-{:exla, "~> 0.9"},                          # CUDA/ROCm
-{:pythonx, "~> 0.2"},                       # Python integration
-{:vix, "~> 0.31"},                          # Image processing
-{:telemetry, "~> 1.0"},
-{:jason, "~> 1.4"},
+{:nx, "~> 0.9"},                            # Required
+{:pythonx, "~> 0.2"},                       # Required - Python integration via UV
+{:vix, "~> 0.31"},                          # Required - Image processing
+{:telemetry, "~> 1.0"},                     # Required
+{:jason, "~> 1.4"},                         # Required
 ```
+
+**Backend Dependencies (user chooses ONE):**
+```elixir
+# Apple Silicon users
+{:emlx, "~> 0.1"}
+
+# NVIDIA/AMD GPU or CPU users
+{:exla, "~> 0.9"}
+
+# PyTorch users (experimental)
+{:torchx, "~> 0.7"}
+```
+
+**Note:** Margarine lists backends as **optional dependencies** in mix.exs. Users must add one to their own deps.
 
 **Python (requirements.txt):**
 ```
