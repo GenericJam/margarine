@@ -1,0 +1,488 @@
+# Margarine - Elixir Image Generation Library
+
+**"I Can't Believe It's Not Butter... I Mean Python!"**
+
+---
+
+## 🚨 CRITICAL: TEST-DRIVEN DEVELOPMENT (TDD) 🚨
+
+**WE ARE PRACTICING TDD ON THIS PROJECT. NO EXCEPTIONS.**
+
+### The Rules:
+
+1. **Tests FIRST, code SECOND**
+   - Write the test before writing implementation code
+   - Run the test and watch it fail
+   - Write minimal code to make it pass
+   - Refactor if needed
+   - Repeat
+
+2. **80%+ Code Coverage Required**
+   - Target: 80% minimum coverage
+   - If coverage falls below 80%, provide written justification OR write more tests
+   - Use `mix test --cover` to verify coverage
+   - Coverage reports must be included in PR descriptions
+
+3. **Test Quality Over Quantity**
+   - Mocks are allowed but must be justified
+   - At least one "real" integration test per major feature that actually generates an image
+   - Fast tests (mocked/1-step) for unit testing and development speed
+   - Slow tests (real generation) for integration/CI validation
+   - Tests must verify behavior, not implementation details
+
+4. **Image Generation Testing Strategy**
+
+   **Fast Tests (majority, for development):**
+   - Mock the Python layer entirely
+   - Use 1-step generation for quick validation
+   - Test parameter validation and error handling
+   - Test tensor shape/size validation
+   - Use tiny test images (64x64 or 128x128)
+
+   **Real Tests (critical path validation):**
+   - Actually load FLUX model and generate images
+   - Tag with `@tag :integration` or `@tag :slow`
+   - Verify image dimensions, format, non-blank output
+   - Run these in CI but maybe not on every commit
+   - Example: `mix test --only integration` for full validation
+
+5. **When Tests Can Be Changed**
+
+   **Valid reasons:**
+   - Requirements changed (document why in commit message)
+   - Test was testing implementation detail, not behavior
+   - Discovered edge case that test didn't account for
+   - Refactoring improved design and test needs updating
+
+   **INVALID reasons:**
+   - Test is failing and I don't want to fix the code
+   - Code is "close enough" to what test expects
+   - "It works on my machine"
+   - Convoluted reasoning to justify changing test to match buggy code
+
+6. **Coverage Exemptions**
+
+   May have <80% coverage if:
+   - Interfacing with external systems that can't be tested (document in CLAUDE.md)
+   - Generated code (boilerplate, migrations)
+   - Intentionally untested exploration code (must be marked with `# TODO: Add tests`)
+
+   All exemptions must be explicitly documented and justified.
+
+### Test Organization
+
+```
+test/
+├── margarine_test.exs              # Public API tests
+├── margarine/
+│   ├── config_test.exs             # Configuration tests
+│   ├── models/
+│   │   └── flux_test.exs           # FLUX model tests (fast + slow)
+│   ├── python/
+│   │   ├── server_test.exs         # Python integration (mocked)
+│   │   └── runtime_test.exs        # Process management
+│   ├── pipeline_test.exs           # Pipeline coordination
+│   ├── image_test.exs              # Image encoding/decoding
+│   └── telemetry_test.exs          # Telemetry events
+├── integration/
+│   ├── flux_real_test.exs          # @tag :integration - Real FLUX generation
+│   └── end_to_end_test.exs         # @tag :integration - Full pipeline
+└── test_helper.exs                 # Test setup, shared fixtures
+```
+
+### Believing in US
+
+**YES, I BELIEVE IN US!** 🚀
+
+We're going to write solid, well-tested code that:
+- Works reliably
+- Fails gracefully with clear errors
+- Is maintainable by others
+- Makes us proud to show in job interviews
+- Actually generates beautiful images
+
+Let's ship quality code, not just code that "works for now."
+
+---
+
+## Project Vision
+
+Margarine is an Elixir library that brings FLUX and Stable Diffusion image generation capabilities to the Elixir ecosystem using Nx, Pythonx, and direct PyTorch integration. The goal is to make AI image generation feel native to Elixir while leveraging the Python ML ecosystem under the hood.
+
+## Why "Margarine"?
+
+Because it's a butter substitute, just like this is a Python substitute for Elixir developers. Plus, it's fun and memorable.
+
+## Local Reference Projects
+
+**Important:** This is not starting from scratch! We have working implementations to reference:
+
+1. **`~/code/imagine`** - FLUX implementation
+   - Working FLUX integration with Pythonx
+   - Zero-copy tensor transfer
+   - MPS/Metal backend support
+   - This is our primary reference for Phase 1
+
+2. **`~/code/imagine_demo`** - FLUX demo/examples
+   - Example usage patterns
+   - UI integration patterns
+   - Reference for documentation examples
+
+3. **`~/code/genericjam`** - Stable Diffusion implementation
+   - Original working SD implementation
+   - Was migrated to `~/code/imagine` (needs verification)
+   - Reference for Phase 4 when we backfill SD support
+
+**Strategy:** Extract and refine the working code from these projects into a clean, production-ready library. Don't reinvent the wheel - we've already solved the hard problems!
+
+## Core Design Principles
+
+1. **Elixir-First API**: Users should feel like they're using an Elixir library, not calling Python
+2. **Zero-Copy Performance**: Leverage Pythonx for efficient tensor transfer between Elixir and Python
+3. **Backend Flexibility**: Support both EMLX (Apple Silicon) and EXLA (CUDA/ROCm) backends
+4. **Streaming Results**: Return intermediate images during generation (denoising steps)
+5. **Production Ready**: Proper error handling, telemetry, and documentation
+
+## Target User Experience
+
+```elixir
+# Simple case
+{:ok, image} = Margarine.generate("a red panda eating bamboo")
+
+# Advanced case with options
+{:ok, image} = Margarine.generate("a red panda eating bamboo",
+  model: :flux_schnell,
+  steps: 4,
+  guidance_scale: 3.5,
+  seed: 42,
+  size: {1024, 1024},
+  backend: :emlx
+)
+
+# Streaming intermediate results
+Margarine.generate_stream("a red panda eating bamboo", steps: 20)
+|> Stream.each(fn {:step, n, image} ->
+  IO.puts("Step #{n}/20")
+  Margarine.save(image, "step_#{n}.png")
+end)
+|> Stream.run()
+
+# Batch generation
+prompts = ["red panda", "blue panda", "green panda"]
+{:ok, images} = Margarine.generate_batch(prompts, model: :flux_schnell)
+
+# Image-to-image
+{:ok, image} = Margarine.generate("turn this into a painting",
+  source_image: "photo.png",
+  strength: 0.7
+)
+```
+
+## Project Structure
+
+```
+margarine/
+├── lib/
+│   ├── margarine.ex                 # Main API module
+│   ├── margarine/
+│   │   ├── application.ex          # OTP application (Python process supervision)
+│   │   ├── config.ex               # Configuration handling
+│   │   ├── models/
+│   │   │   ├── flux.ex             # FLUX model integration
+│   │   │   ├── stable_diffusion.ex # SD integration (future)
+│   │   │   └── model.ex            # Model behavior
+│   │   ├── python/
+│   │   │   ├── server.ex           # Pythonx integration layer
+│   │   │   └── runtime.ex          # Python process management
+│   │   ├── pipeline.ex             # Generation pipeline coordination
+│   │   ├── image.ex                # Image encoding/decoding
+│   │   └── telemetry.ex            # Instrumentation
+│   └── margarine_web/              # Optional LiveView demo (separate)
+├── priv/
+│   └── python/
+│       ├── flux_server.py          # FLUX inference server
+│       ├── requirements.txt        # Python dependencies
+│       └── utils.py                # Helper functions
+├── test/
+├── examples/                       # Example scripts
+├── CLAUDE.md                       # This file
+└── mix.exs
+```
+
+## Technical Architecture
+
+### Phase 1: FLUX Integration (MVP)
+
+**Components:**
+
+1. **Python Server** (`priv/python/flux_server.py`)
+   - Loads FLUX model on startup
+   - Exposes inference API via Pythonx
+   - Handles tensor operations with PyTorch/MPS or CUDA
+   - Returns numpy arrays for image data
+
+2. **Elixir Wrapper** (`lib/margarine/python/server.ex`)
+   - Manages Python process lifecycle
+   - Converts Elixir data → Python via Pythonx
+   - Handles zero-copy tensor transfer
+   - Error handling and retries
+
+3. **Pipeline Coordinator** (`lib/margarine/pipeline.ex`)
+   - Orchestrates generation workflow
+   - Handles streaming intermediate results
+   - Manages batching and concurrency
+
+4. **Image Processing** (`lib/margarine/image.ex`)
+   - Converts between Nx tensors and image formats
+   - Uses Vix/Image for PNG/JPEG encoding
+   - Handles image preprocessing for img2img
+
+5. **Public API** (`lib/margarine.ex`)
+   - Clean, Elixir-idiomatic interface
+   - Documentation and examples
+   - Type specs for all public functions
+
+### Model Download Strategy
+
+**Options to consider:**
+
+1. **Hugging Face Cache** (recommended for MVP)
+   - Use `transformers` library's built-in caching
+   - Models download to `~/.cache/huggingface/`
+   - Automatic on first use, user just needs HF token
+   - Example: `from_pretrained("black-forest-labs/FLUX.1-schnell")`
+
+2. **Priv Directory** (alternative)
+   - Download models to `priv/models/`
+   - More control, but larger app size
+   - Good for air-gapped deployments
+
+3. **User-Specified Path** (power users)
+   - Allow config like `model_cache_dir: "/data/models"`
+   - Useful for containers, shared storage
+
+**MVP Decision:** Use Hugging Face cache, add config option later.
+
+### Backend Support
+
+**EMLX (Apple Silicon):**
+```elixir
+config :margarine,
+  backend: {EMLX.Backend, device: :gpu}
+```
+
+**EXLA (CUDA/ROCm):**
+```elixir
+config :margarine,
+  backend: {EXLA.Backend, client: :cuda}
+```
+
+**CPU Fallback:**
+```elixir
+config :margarine,
+  backend: Nx.BinaryBackend
+```
+
+### Error Handling
+
+**Common scenarios:**
+- Model not found / download failed
+- CUDA/MPS out of memory
+- Invalid prompt or parameters
+- Python process crash
+- Image encoding/decoding errors
+
+**Strategy:**
+- Return `{:ok, result}` or `{:error, reason}` tuples
+- Detailed error messages with recovery suggestions
+- Telemetry events for monitoring
+- Graceful degradation where possible
+
+## Development Phases
+
+### Phase 1: FLUX Schnell (Quick Wins - 2-3 weeks)
+
+**Goal:** Get basic text-to-image working with FLUX Schnell (4-step model)
+
+**Beads:**
+1. `margarine-xxx`: Project setup - dependencies, config, basic structure
+2. `margarine-xxx`: Python FLUX server - load model, basic inference
+3. `margarine-xxx`: Pythonx integration - process management, data transfer
+4. `margarine-xxx`: Image encoding/decoding - Nx tensors ↔ PNG
+5. `margarine-xxx`: Public API - `Margarine.generate/2`
+6. `margarine-xxx`: Testing - unit tests, integration tests
+7. `margarine-xxx`: Documentation - README, API docs, examples
+8. `margarine-xxx`: Hex package preparation - publish to Hex.pm
+
+**Deliverables:**
+- Working library on Hex.pm
+- Example scripts
+- Blog post / demo video
+- GitHub repo with stars ⭐
+
+### Phase 2: Advanced FLUX Features (1-2 weeks)
+
+**Beads:**
+1. `margarine-xxx`: FLUX Dev model support (higher quality, more steps)
+2. `margarine-xxx`: Streaming intermediate results
+3. `margarine-xxx`: Batch generation
+4. `margarine-xxx`: Seed control for reproducibility
+5. `margarine-xxx`: Custom schedulers (DDIM, Euler, etc.)
+6. `margarine-xxx`: Telemetry and instrumentation
+7. `margarine-xxx`: Performance optimizations
+
+### Phase 3: Image-to-Image (1 week)
+
+**Beads:**
+1. `margarine-xxx`: Image loading and preprocessing
+2. `margarine-xxx`: Strength parameter (denoising level)
+3. `margarine-xxx`: Image-to-image pipeline
+4. `margarine-xxx`: Examples and documentation
+
+### Phase 4: Stable Diffusion (Backfill - 2-3 weeks)
+
+**Beads:**
+1. `margarine-xxx`: SD model loading and inference
+2. `margarine-xxx`: Model behavior abstraction
+3. `margarine-xxx`: Unified API across models
+4. `margarine-xxx`: Model selection and switching
+5. `margarine-xxx`: SD-specific features (negative prompts, etc.)
+
+### Phase 5: Production Features (Ongoing)
+
+**Nice-to-haves:**
+- ControlNet integration
+- LoRA support
+- Inpainting/outpainting
+- Upscaling
+- Multi-model ensembles
+- GPU memory management
+- Rate limiting and queuing
+- CloudFlare R2 / S3 integration for storage
+
+## Dependencies
+
+**Elixir:**
+```elixir
+{:nx, "~> 0.9"},
+{:emlx, github: "elixir-nx/emlx"},          # Apple Silicon
+{:exla, "~> 0.9"},                          # CUDA/ROCm
+{:pythonx, "~> 0.2"},                       # Python integration
+{:vix, "~> 0.31"},                          # Image processing
+{:telemetry, "~> 1.0"},
+{:jason, "~> 1.4"},
+```
+
+**Python (requirements.txt):**
+```
+torch>=2.0.0
+transformers>=4.30.0
+diffusers>=0.21.0
+pillow>=10.0.0
+numpy>=1.24.0
+```
+
+## Configuration
+
+**Application config (config/config.exs):**
+```elixir
+config :margarine,
+  # Backend selection
+  backend: {EMLX.Backend, device: :gpu},
+
+  # Model cache directory
+  model_cache_dir: nil,  # nil = use HF cache
+
+  # Python environment
+  python_executable: "python3",
+
+  # Generation defaults
+  default_model: :flux_schnell,
+  default_steps: 4,
+  default_guidance_scale: 3.5,
+  default_size: {1024, 1024},
+
+  # Performance
+  max_concurrent: 1,  # Most GPUs can only run one model at a time
+  timeout: 60_000,    # 60 seconds per generation
+
+  # Telemetry
+  enable_telemetry: true
+```
+
+## Testing Strategy
+
+1. **Unit tests**: Individual modules, mocked Python calls
+2. **Integration tests**: Real Python server, real models (CI: CPU only)
+3. **Manual tests**: GPU backends, visual quality checks
+4. **Example scripts**: Double as smoke tests
+
+## Documentation Plan
+
+1. **README.md**: Quick start, installation, basic examples
+2. **HexDocs**: Full API documentation with examples
+3. **guides/**: Step-by-step tutorials
+   - Getting started
+   - Advanced usage
+   - Backend configuration
+   - Production deployment
+4. **Blog post**: "Introducing Margarine: AI Image Generation for Elixir"
+5. **Demo video**: 2-3 minute screencast
+
+## Success Metrics
+
+**Technical:**
+- ✅ Generate 1024x1024 image in <5s on M4/MPS
+- ✅ Generate 1024x1024 image in <2s on RTX 4090/CUDA
+- ✅ Zero-copy tensor transfer working
+- ✅ Streaming intermediate results
+- ✅ Proper error handling and recovery
+
+**Community:**
+- 🎯 100+ GitHub stars in first month
+- 🎯 10+ downloads per day on Hex.pm
+- 🎯 Used in at least 3 real projects
+- 🎯 Mentioned on Elixir Forum, Reddit, Twitter
+- 🎯 Lightning talk at ElixirConf or meetup
+
+## Open Questions for Discussion
+
+1. **Name**: Are we happy with "Margarine"? Alternatives?
+2. **Model scope**: Start with just FLUX Schnell, or include FLUX Dev in Phase 1?
+3. **Image format**: Default to PNG, or support JPEG/WebP too?
+4. **Streaming**: HTTP streaming for LiveView integration? Or just in-memory?
+5. **Licensing**: MIT? Apache 2.0? (Consider model licenses too)
+6. **HuggingFace token**: Require env var, or optional config?
+7. **Python version**: Target 3.11+? Support 3.9+?
+
+## Notes from GenericJam Image Generation Experiments
+
+**What worked well:**
+- Pythonx for zero-copy integration
+- EMLX backend on Apple Silicon
+- Nx tensor manipulation
+- Streaming results to LiveView
+
+**Pain points:**
+- Model download is unclear to users
+- Backend configuration is confusing
+- Error messages from Python are cryptic
+- Memory management needs attention
+
+**Improvements for Margarine:**
+- Better error messages
+- Clear documentation on model setup
+- Automatic backend detection
+- Memory usage monitoring
+
+## Next Steps
+
+1. Review this plan together
+2. Create initial beads for Phase 1
+3. Set up project structure
+4. Start with Python server + basic inference
+5. Iterate!
+
+---
+
+**Remember:** Ship early, ship often. Phase 1 is the MVP - get it out there and iterate based on feedback!
