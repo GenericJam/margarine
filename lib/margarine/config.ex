@@ -87,6 +87,38 @@ defmodule Margarine.Config do
     end
   end
 
+  @doc """
+  Get default generation options for a specific model.
+
+  Returns a map with default values for steps, guidance_scale, and size.
+  """
+  @spec get_generation_defaults(atom()) :: map()
+  def get_generation_defaults(model) do
+    case model do
+      :flux_schnell ->
+        %{
+          steps: 4,
+          guidance_scale: 0.0,
+          size: {1024, 1024}
+        }
+
+      :flux_dev ->
+        %{
+          steps: 28,
+          guidance_scale: 3.5,
+          size: {1024, 1024}
+        }
+
+      _ ->
+        # Fallback to schnell defaults
+        %{
+          steps: 4,
+          guidance_scale: 0.0,
+          size: {1024, 1024}
+        }
+    end
+  end
+
   # Private validation functions
 
   defp validate_model(nil), do: {:ok, get(:default_model)}
