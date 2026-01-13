@@ -236,13 +236,28 @@ defmodule Margarine.Pipeline do
     Logger.info("[Margarine.Pipeline] Decoding latents to image...")
 
     case PythonxServer.vae_decode(server, latents) do
-      {:ok, image} ->
+      {:ok, image_float} ->
+        # Convert from float32 [-1, 1] to uint8 [0, 255]
+        image = convert_to_uint8(image_float)
         Logger.info("[Margarine.Pipeline] ✓ Image decoded")
         {:ok, image}
 
       {:error, reason} ->
         {:error, "VAE decode failed: #{inspect(reason)}"}
     end
+  end
+
+  defp convert_to_uint8(tensor) do
+    # VAE outputs float32 in range [-1, 1]
+    # Shape: {1, 3, H, W} (BCHW format)
+    # Convert to [0, 255] uint8 and reshape to {H, W, 3} (HWC format) for image saving
+    tensor
+    |> Nx.squeeze(axes: [0])  # {1, 3, H, W} -> {3, H, W}
+    |> Nx.transpose(axes: [1, 2, 0])  # {3, H, W} -> {H, W, 3}
+    |> Nx.add(1.0)  # [-1, 1] -> [0, 2]
+    |> Nx.multiply(127.5)  # [0, 2] -> [0, 255]
+    |> Nx.clip(0, 255)  # Clamp to valid range
+    |> Nx.as_type({:u, 8})  # Convert to uint8
   end
 
   defp server_name_for_model(model) do
