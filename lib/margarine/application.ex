@@ -46,29 +46,27 @@ defmodule Margarine.Application do
   @spec check_environment() :: map()
   def check_environment do
     # Try a simple Pythonx eval to check if it's working
-    try do
-      code = """
-      import sys
-      python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-      """
+    code = """
+    import sys
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    """
 
-      case Pythonx.eval(code, %{}) do
-        {:error, _reason} ->
-          %{pythonx_initialized: false, python_version: nil}
+    case Pythonx.eval(code, %{}) do
+      {:error, _reason} ->
+        %{pythonx_initialized: false, python_version: nil}
 
-        {_result, globals} ->
-          version =
-            case Map.get(globals, "python_version") do
-              nil -> nil
-              %Pythonx.Object{} = obj -> Pythonx.decode(obj)
-              other -> other
-            end
+      {_result, globals} ->
+        version =
+          case Map.get(globals, "python_version") do
+            nil -> nil
+            %Pythonx.Object{} = obj -> Pythonx.decode(obj)
+            other -> other
+          end
 
-          %{pythonx_initialized: true, python_version: version}
-      end
-    rescue
-      _ -> %{pythonx_initialized: false, python_version: nil}
+        %{pythonx_initialized: true, python_version: version}
     end
+  rescue
+    _ -> %{pythonx_initialized: false, python_version: nil}
   end
 
   # Private helpers
