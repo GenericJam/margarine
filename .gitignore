@@ -21,3 +21,4 @@ margarine-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+priv/python/__pycache__/

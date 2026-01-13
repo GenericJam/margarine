@@ -86,10 +86,9 @@ defmodule Margarine do
     # Merge prompt into opts for validation
     full_opts = Keyword.put(opts, :prompt, prompt)
 
-    with {:ok, _state} <- Pipeline.prepare(full_opts) do
-      # TODO: Call Python server to actually generate image
-      # For now, return error indicating not yet implemented
-      {:error, "Image generation not yet implemented - Python server integration pending"}
+    with {:ok, state} <- Pipeline.prepare(full_opts),
+         {:ok, image} <- Pipeline.generate(state) do
+      {:ok, image}
     end
   end
 

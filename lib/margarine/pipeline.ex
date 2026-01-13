@@ -23,6 +23,10 @@ defmodule Margarine.Pipeline do
   """
 
   alias Margarine.Config
+  alias Margarine.Schedulers.FluxEuler
+  alias Margarine.Python.PythonxServer
+
+  require Logger
 
   @type pipeline_state :: %{
           prompt: String.t(),
@@ -92,6 +96,157 @@ defmodule Margarine.Pipeline do
       error ->
         error
     end
+  end
+
+  @doc """
+  Execute the complete FLUX generation pipeline.
+
+  Takes a prepared pipeline state and generates an image.
+
+  ## Steps:
+  1. Start/get PythonxServer GenServer
+  2. Encode text prompt to embeddings
+  3. Initialize scheduler with timesteps
+  4. Generate initial latents (noise)
+  5. Denoising loop (transformer forward passes)
+  6. Decode latents to image
+
+  Returns `{:ok, image_tensor}` where image is {H, W, 3} uint8 RGB tensor.
+  """
+  @spec generate(pipeline_state()) :: {:ok, Nx.Tensor.t()} | {:error, String.t()}
+  def generate(state) do
+    Logger.info("[Margarine.Pipeline] Starting generation: #{state.prompt}")
+    Logger.info("[Margarine.Pipeline] Model: #{state.model}, Steps: #{state.steps}, Size: #{inspect(state.size)}")
+
+    with {:ok, server} <- get_or_start_server(state.model),
+         {:ok, embeds} <- encode_prompt(server, state),
+         {:ok, scheduler} <- initialize_scheduler(state),
+         {:ok, latents} <- generate_initial_latents(server, state),
+         {:ok, denoised} <- denoising_loop(server, state, scheduler, latents, embeds),
+         {:ok, image} <- decode_to_image(server, denoised) do
+      Logger.info("[Margarine.Pipeline] ✓ Generation complete")
+      {:ok, image}
+    end
+  end
+
+  # Private pipeline steps
+
+  defp get_or_start_server(model) do
+    server_name = server_name_for_model(model)
+
+    case Process.whereis(server_name) do
+      nil ->
+        Logger.info("[Margarine.Pipeline] Starting PythonxServer for #{model}...")
+        opts = [name: server_name, model: model]
+
+        case PythonxServer.start_link(opts) do
+          {:ok, pid} ->
+            Logger.info("[Margarine.Pipeline] ✓ PythonxServer started: #{inspect(pid)}")
+            {:ok, server_name}
+
+          {:error, {:already_started, _pid}} ->
+            {:ok, server_name}
+
+          {:error, reason} ->
+            {:error, "Failed to start Python server: #{inspect(reason)}"}
+        end
+
+      _pid ->
+        {:ok, server_name}
+    end
+  end
+
+  defp encode_prompt(server, state) do
+    Logger.info("[Margarine.Pipeline] Encoding prompt...")
+
+    case PythonxServer.encode_prompt(server, state.prompt,
+           guidance_scale: state.guidance_scale
+         ) do
+      {:ok, result} ->
+        Logger.info("[Margarine.Pipeline] ✓ Prompt encoded")
+        {:ok, result}
+
+      {:error, reason} ->
+        {:error, "Prompt encoding failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp initialize_scheduler(state) do
+    Logger.info("[Margarine.Pipeline] Initializing scheduler...")
+    scheduler = FluxEuler.new() |> FluxEuler.set_timesteps(state.steps)
+    Logger.info("[Margarine.Pipeline] ✓ Scheduler initialized with #{state.steps} steps")
+    {:ok, scheduler}
+  end
+
+  defp generate_initial_latents(server, state) do
+    Logger.info("[Margarine.Pipeline] Generating initial latents...")
+    {height, width} = state.size
+
+    case PythonxServer.generate_latents(server, height, width, state.seed) do
+      {:ok, latents} ->
+        Logger.info("[Margarine.Pipeline] ✓ Initial latents generated")
+        {:ok, latents}
+
+      {:error, reason} ->
+        {:error, "Latent generation failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp denoising_loop(server, state, scheduler, latents, embeds) do
+    Logger.info("[Margarine.Pipeline] Starting denoising loop (#{state.steps} steps)...")
+
+    timesteps = scheduler.timesteps |> Nx.to_flat_list()
+    num_steps = length(timesteps)
+
+    result =
+      Enum.reduce_while(Enum.with_index(timesteps), latents, fn {timestep, idx}, current_latents ->
+        Logger.debug("[Margarine.Pipeline] Step #{idx + 1}/#{num_steps}, timestep: #{timestep}")
+
+        case PythonxServer.transformer_forward(
+               server,
+               current_latents,
+               timestep,
+               embeds.prompt_embeds,
+               embeds.pooled_embeds,
+               guidance_scale: state.guidance_scale
+             ) do
+          {:ok, model_output} ->
+            # Apply scheduler step
+            next_latents =
+              FluxEuler.step(scheduler, model_output, idx, current_latents)
+
+            {:cont, next_latents}
+
+          {:error, reason} ->
+            {:halt, {:error, "Denoising step #{idx} failed: #{inspect(reason)}"}}
+        end
+      end)
+
+    case result do
+      {:error, _} = error ->
+        error
+
+      final_latents ->
+        Logger.info("[Margarine.Pipeline] ✓ Denoising complete")
+        {:ok, final_latents}
+    end
+  end
+
+  defp decode_to_image(server, latents) do
+    Logger.info("[Margarine.Pipeline] Decoding latents to image...")
+
+    case PythonxServer.vae_decode(server, latents) do
+      {:ok, image} ->
+        Logger.info("[Margarine.Pipeline] ✓ Image decoded")
+        {:ok, image}
+
+      {:error, reason} ->
+        {:error, "VAE decode failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp server_name_for_model(model) do
+    String.to_atom("margarine_pythonx_#{model}")
   end
 
   # Private validation helpers
