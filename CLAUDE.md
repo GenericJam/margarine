@@ -93,10 +93,31 @@ test/
 │   ├── image_test.exs              # Image encoding/decoding
 │   └── telemetry_test.exs          # Telemetry events
 ├── integration/
-│   ├── flux_real_test.exs          # @tag :integration - Real FLUX generation
-│   └── end_to_end_test.exs         # @tag :integration - Full pipeline
+│   ├── flux_generation_test.exs    # @tag :integration - Real FLUX generation
+│   └── end_to_end_test.exs         # @tag :integration - Full pipeline (future)
 └── test_helper.exs                 # Test setup, shared fixtures
 ```
+
+### Running Tests
+
+**Fast tests (default):**
+```bash
+mix test              # Runs all tests except integration tests
+mix test --cover      # With coverage report
+```
+
+**Integration tests (requires model download, 16GB+ RAM):**
+```bash
+mix test --only integration         # Only integration tests
+mix test --include integration      # All tests including integration
+```
+
+**Integration tests are excluded by default** because they:
+- Download ~12GB FLUX model on first run
+- Require 16GB+ RAM or 12GB+ VRAM
+- Take 5-30 seconds per test
+
+For CI/CD, run fast tests on every commit, integration tests on merges to main.
 
 ### Elixir Code Style (Credo Standards)
 
