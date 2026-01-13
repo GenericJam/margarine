@@ -12,6 +12,69 @@ We have `ck` (C-K, pronounced "seek") available for semantic grep - a way to cas
 
 ---
 
+## 🚧 CONTINUATION PLAN: FLUX Integration (Phase 1.5)
+
+**Status:** Phase 1 MVP complete (10/10 beads) - all infrastructure ready. Now need to wire up actual FLUX generation.
+
+**What's Done:**
+- ✅ All core modules (Config, Memory, Image, Pipeline, Schedulers)
+- ✅ Public API structure (Margarine.generate/1 and /2)
+- ✅ Pure Nx FluxEuler scheduler
+- ✅ Pythonx integration layer foundations
+- ✅ 119 tests passing (75.3% coverage)
+- ✅ Complete documentation and examples
+- ✅ Hex package ready
+- ✅ Python file copied: `priv/python/flux_pythonx.py` from working `imagine` project
+
+**What's Missing:** The actual Python FLUX model integration (currently returns stub error)
+
+**Remaining Beads (in order):**
+
+1. **margarine-z7f**: Create `Margarine.Python.PythonxServer` GenServer
+   - Copy/adapt from `~/code/imagine/lib/imagine/inference/pythonx_server.ex`
+   - Key functions: `initialize_model/3`, `encode_prompt/3`, `transformer_forward/6`, `vae_decode/2`
+   - Use Pythonx for zero-copy tensor sharing
+   - Handle FLUX model loading and inference
+
+2. **margarine-5se**: Wire `Pipeline.generate/1` to call PythonxServer
+   - Add `generate/1` function to Pipeline module
+   - Flow: prepare → encode_prompt → denoising_loop → vae_decode
+   - Use FluxEuler scheduler for timesteps
+   - Return final image tensor
+
+3. **margarine-bkz**: Update `Margarine.generate/2` to use real implementation
+   - Remove stub "not yet implemented" error
+   - Call `Pipeline.generate/1` with prepared state
+   - Return actual generated image
+
+4. **margarine-0g8**: Test end-to-end with example scripts
+   - Run `elixir examples/basic.exs` - should generate image
+   - Run `elixir examples/advanced.exs` - should generate 3 images
+   - Verify images are saved as PNG files
+
+5. **margarine-15r**: Run integration tests with real FLUX
+   - `mix test --only integration` should pass
+   - Tests in `test/integration/flux_generation_test.exs`
+   - Verify reproducibility, seeds, and error handling
+
+**Reference Implementation:**
+- Working code in `~/code/imagine`
+- See `~/code/imagine/CLAUDE.md` for architecture details
+- Key files:
+  - `lib/imagine/inference/pythonx_server.ex` - GenServer
+  - `lib/imagine/pipelines/flux_text2image.ex` - Pipeline
+  - `priv/python/flux_pythonx.py` - Python (already copied!)
+
+**Testing Strategy:**
+- Start with basic.exs to verify generation works
+- Then run integration tests
+- Keep TDD practices but don't over-test during integration
+- Focus on getting it working first, then add tests if coverage drops
+
+**Estimated Effort:** 2-3 hours for complete integration
+
+---
+
 ## 🚨 CRITICAL: TEST-DRIVEN DEVELOPMENT (TDD) 🚨
 
 **WE ARE PRACTICING TDD ON THIS PROJECT. NO EXCEPTIONS.**
