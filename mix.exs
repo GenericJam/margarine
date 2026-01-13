@@ -14,7 +14,14 @@ defmodule Margarine.MixProject do
         "coveralls.detail": :test,
         "coveralls.post": :test,
         "coveralls.html": :test
-      ]
+      ],
+
+      # Hex package metadata
+      description: description(),
+      package: package(),
+      docs: docs(),
+      name: "Margarine",
+      source_url: "https://github.com/yourorg/margarine"
     ]
   end
 
@@ -47,6 +54,62 @@ defmodule Margarine.MixProject do
       # {:emlx, "~> 0.1", optional: true},
       # {:exla, "~> 0.9", optional: true},
       # {:torchx, "~> 0.7", optional: true}
+    ]
+  end
+
+  defp description do
+    """
+    AI-powered image generation for Elixir using FLUX and Stable Diffusion.
+    Generate beautiful images from text prompts with a clean, native API.
+    Features zero-copy Pythonx integration, automatic Python/dependency management,
+    and support for Apple Silicon (EMLX) and NVIDIA GPUs (EXLA).
+    """
+  end
+
+  defp package do
+    [
+      name: "margarine",
+      licenses: ["MIT"],
+      links: %{
+        "GitHub" => "https://github.com/yourorg/margarine",
+        "Changelog" => "https://github.com/yourorg/margarine/blob/master/CHANGELOG.md"
+      },
+      files: ~w(
+        lib
+        priv
+        test
+        examples
+        .formatter.exs
+        mix.exs
+        README.md
+        LICENSE
+        CHANGELOG.md
+      ),
+      maintainers: ["Margarine Contributors"]
+    ]
+  end
+
+  defp docs do
+    [
+      main: "Margarine",
+      extras: [
+        "README.md",
+        "CHANGELOG.md",
+        "examples/README.md"
+      ],
+      groups_for_extras: [
+        Examples: ~r/examples\/.*/
+      ],
+      groups_for_modules: [
+        "Core API": [Margarine, Margarine.Pipeline],
+        Configuration: [Margarine.Config],
+        "Python Integration": [
+          Margarine.Application,
+          Margarine.Python.FluxServer
+        ],
+        Schedulers: [Margarine.Schedulers.FluxEuler],
+        Utilities: [Margarine.Image, Margarine.Memory]
+      ]
     ]
   end
 end
