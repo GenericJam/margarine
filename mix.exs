@@ -17,11 +17,11 @@ defmodule Margarine.MixProject do
       ],
 
       # Hex package metadata
-      description: description(),
-      package: package(),
-      docs: docs(),
       name: "Margarine",
-      source_url: "https://github.com/yourorg/margarine"
+      source_url: "https://github.com/yourorg/margarine",
+      description: "AI-powered image generation for Elixir using FLUX and Stable Diffusion",
+      package: package(),
+      docs: docs()
     ]
   end
 
@@ -55,15 +55,6 @@ defmodule Margarine.MixProject do
       # {:exla, "~> 0.9", optional: true},
       # {:torchx, "~> 0.7", optional: true}
     ]
-  end
-
-  defp description do
-    """
-    AI-powered image generation for Elixir using FLUX and Stable Diffusion.
-    Generate beautiful images from text prompts with a clean, native API.
-    Features zero-copy Pythonx integration, automatic Python/dependency management,
-    and support for Apple Silicon (EMLX) and NVIDIA GPUs (EXLA).
-    """
   end
 
   defp package do
