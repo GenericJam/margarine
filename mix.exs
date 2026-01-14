@@ -70,6 +70,7 @@ defmodule Margarine.MixProject do
         priv
         test
         examples
+        assets
         .formatter.exs
         mix.exs
         README.md
@@ -83,12 +84,15 @@ defmodule Margarine.MixProject do
   defp docs do
     [
       main: "Margarine",
+      logo: "assets/logo.png",
       extras: [
         "README.md",
         "CHANGELOG.md",
+        "notebooks/getting_started.livemd",
         "examples/README.md"
       ],
       groups_for_extras: [
+        Guides: ~r/notebooks\/.*/,
         Examples: ~r/examples\/.*/
       ],
       groups_for_modules: [

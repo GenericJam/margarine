@@ -1,0 +1,426 @@
+# Getting Started with Margarine
+
+```elixir
+Mix.install([
+  {:margarine, "~> 0.1.0"},
+  {:kino, "~> 0.14"}
+])
+```
+
+## Welcome to Margarine! 🧈
+
+**Margarine** is an Elixir library for AI image generation using FLUX models. This notebook will guide you through generating your first images.
+
+## What You'll Learn
+
+* How to generate images from text prompts
+* How to configure generation parameters (steps, size, seed)
+* Differences between FLUX Schnell (fast) and FLUX Dev (quality)
+* How to save and display generated images
+
+## Prerequisites
+
+Before running this notebook, make sure you have:
+
+* **Memory**: 16GB+ RAM (24GB recommended for FLUX Dev)
+* **Apple Silicon Mac** or **NVIDIA GPU** (CUDA 11.8+)
+* **Internet connection** (first run downloads ~12GB model)
+* **Optional**: HuggingFace account for FLUX Dev model access
+
+## Model Selection
+
+FLUX comes in two flavors:
+
+### FLUX Schnell (Fast) ⚡
+
+* **Steps**: 4 (very fast, ~30-60 seconds)
+* **Quality**: Good for prototyping and quick iterations
+* **Memory**: ~14GB
+* **License**: Apache 2.0 (free for commercial use)
+* **Best for**: Testing, development, rapid iteration
+
+### FLUX Dev (High Quality) 🎨
+
+* **Steps**: 28 (slower, ~3-5 minutes)
+* **Quality**: Excellent, production-ready images
+* **Memory**: ~24GB
+* **License**: Non-commercial (requires license for commercial use)
+* **Requires**: HuggingFace token for model access
+* **Best for**: Final output, high-quality renders
+
+```elixir
+# Choose your model
+model_selector = Kino.Input.select("Select Model", [
+  {:flux_schnell, "FLUX Schnell (Fast, 4 steps)"},
+  {:flux_dev, "FLUX Dev (High Quality, 28 steps - requires HF token)"}
+])
+```
+
+```elixir
+selected_model = Kino.Input.read(model_selector)
+IO.puts("✓ Selected model: #{selected_model}")
+
+# Show requirements for selected model
+case selected_model do
+  :flux_schnell ->
+    IO.puts("""
+
+    FLUX Schnell Requirements:
+    - Memory: ~14GB RAM
+    - Steps: 4 (fast generation)
+    - No HuggingFace token needed
+    - Free for commercial use
+    """)
+
+  :flux_dev ->
+    IO.puts("""
+
+    FLUX Dev Requirements:
+    - Memory: ~24GB RAM
+    - Steps: 28 (high quality)
+    - HuggingFace token REQUIRED
+    - Non-commercial license (requires purchase for commercial use)
+
+    To use FLUX Dev:
+    1. Create account at https://huggingface.co
+    2. Accept FLUX.1-dev license at https://huggingface.co/black-forest-labs/FLUX.1-dev
+    3. Create token at https://huggingface.co/settings/tokens
+    4. Set environment variable: export HF_TOKEN="your_token_here"
+    """)
+end
+```
+
+## Your First Generation
+
+Let's start with a simple prompt. The first generation will take longer (2-5 minutes) as the model downloads. Subsequent generations will be much faster!
+
+```elixir
+# Enter your prompt
+prompt_input = Kino.Input.textarea("Enter your prompt", default: "A single rectangular stick of yellow margarine sitting in a spreading puddle of melted butter. The
+         + margarine stick is golden yellow with smooth rounded corners, slightly melting and dripping down the sides. Below it
+         +  is a large irregular puddle of liquid margarine spreading outward, with an oily rainbow sheen reflecting light. The
+         +  puddle has organic flowing edges. Clean illustration style with bold black outlines, bright yellow and golden
+         + colors. Simple clean background. Product illustration style, playful and slightly cartoonish but professional. View
+         + from slight angle showing 3D depth. The margarine stick should look soft and glossy, with visible melting occurring
+         + at the edges and bottom.")
+```
+
+```elixir
+prompt = Kino.Input.read(prompt_input)
+IO.puts("Prompt: #{prompt}")
+
+# Generate the image
+IO.puts("\n🎨 Starting generation...")
+IO.puts("⏳ First run: Model will download (~12GB, takes 2-5 minutes)")
+IO.puts("⏳ Subsequent runs: Much faster (~30-60 seconds for Schnell)")
+
+opts = [
+  model: selected_model,
+  steps: if(selected_model == :flux_schnell, do: 4, else: 28),
+  size: {1024, 1024},
+  seed: 0  # For reproducibility
+]
+
+case Margarine.generate(prompt, opts) do
+  {:ok, image} ->
+    IO.puts("✅ Generation complete!")
+    IO.puts("Image shape: #{inspect(Nx.shape(image))}")
+    IO.puts("Image type: #{inspect(Nx.type(image))}")
+
+    # Save the image
+    output_path = "/tmp/margarine_output.png"
+    case Margarine.Image.save(image, output_path) do
+      :ok ->
+        IO.puts("✅ Saved to: #{output_path}")
+
+        # Display the image
+        Kino.Image.new(File.read!(output_path), :png)
+
+      {:error, reason} ->
+        IO.puts("❌ Failed to save: #{inspect(reason)}")
+    end
+
+  {:error, reason} ->
+    IO.puts("❌ Generation failed: #{inspect(reason)}")
+    IO.puts("""
+
+    Common issues:
+    - Not enough memory (need 16GB+ RAM)
+    - FLUX Dev requires HuggingFace token
+    - First run needs internet connection
+    """)
+end
+```
+
+## Advanced: Parameter Exploration
+
+Let's explore how different parameters affect the output.
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Step 1: Enter Parameters
+
+```elixir
+# Advanced parameters form
+prompt_input_2 = Kino.Input.textarea("Prompt", default: "a majestic lion in golden hour light")
+width_input = Kino.Input.number("Width", default: 1024)
+height_input = Kino.Input.number("Height", default: 1024)
+seed_input = Kino.Input.number("Seed (for reproducibility)", default: :rand.uniform(999999))
+
+form = Kino.Layout.grid([prompt_input_2, width_input, height_input, seed_input], columns: 1)
+```
+
+### Step 2: Generate with Parameters
+
+```elixir
+# Read form values and generate
+prompt_2 = Kino.Input.read(prompt_input_2)
+width = Kino.Input.read(width_input)
+height = Kino.Input.read(height_input)
+seed = Kino.Input.read(seed_input)
+
+IO.puts("🎨 Generating with custom parameters...")
+IO.puts("Prompt: #{prompt_2}")
+IO.puts("Size: #{width}x#{height}")
+IO.puts("Seed: #{seed}")
+
+opts = [
+  model: selected_model,
+  steps: if(selected_model == :flux_schnell, do: 4, else: 28),
+  size: {width, height},
+  seed: seed
+]
+
+case Margarine.generate(prompt_2, opts) do
+  {:ok, image} ->
+    IO.puts("✅ Generation complete!")
+    output_path = "/tmp/margarine_custom_#{seed}.png"
+
+    case Margarine.Image.save(image, output_path) do
+      :ok ->
+        IO.puts("✅ Saved to: #{output_path}")
+        Kino.Image.new(File.read!(output_path), :png)
+
+      {:error, reason} ->
+        IO.puts("❌ Save failed: #{inspect(reason)}")
+    end
+
+  {:error, reason} ->
+    IO.puts("❌ Generation failed: #{inspect(reason)}")
+end
+```
+
+## Seed Comparison: Reproducibility
+
+Seeds allow you to reproduce exact results. Let's generate the same prompt with different seeds.
+
+```elixir
+# Generate 3 images with different seeds
+comparison_prompt = "a cyberpunk city at night, neon lights"
+
+seeds = [42, 123, 999]
+
+IO.puts("🎨 Generating #{length(seeds)} variations...")
+
+results = Enum.map(seeds, fn seed ->
+  IO.puts("Generating with seed: #{seed}...")
+
+  opts = [
+    model: :flux_schnell,  # Use fast model for comparison
+    steps: 4,
+    size: {512, 512},  # Smaller for faster generation
+    seed: seed
+  ]
+
+  case Margarine.generate(comparison_prompt, opts) do
+    {:ok, image} ->
+      path = "/tmp/margarine_seed_#{seed}.png"
+      Margarine.Image.save(image, path)
+      {seed, path}
+
+    {:error, reason} ->
+      IO.puts("Failed seed #{seed}: #{inspect(reason)}")
+      nil
+  end
+end)
+|> Enum.reject(&is_nil/1)
+
+IO.puts("✅ Generated #{length(results)} images")
+
+# Display all images
+images_to_display = Enum.map(results, fn {seed, path} ->
+  [
+    Kino.Markdown.new("**Seed: #{seed}**"),
+    Kino.Image.new(File.read!(path), :png)
+  ]
+end)
+|> List.flatten()
+
+Kino.Layout.grid(images_to_display, columns: 1)
+```
+
+## Sequential Generation
+
+Generate multiple images from different prompts one after another.
+
+```elixir
+# Sequential generation
+batch_prompts = [
+  "a serene mountain landscape at sunrise",
+  "a futuristic robot reading a book",
+  "an underwater city with bioluminescent creatures"
+]
+
+IO.puts("🎨 Generating #{length(batch_prompts)} images sequentially...")
+
+batch_results = Enum.with_index(batch_prompts, 1)
+|> Enum.map(fn {prompt, idx} ->
+  IO.puts("\n[#{idx}/#{length(batch_prompts)}] Generating: #{prompt}")
+
+  opts = [
+    model: :flux_schnell,
+    steps: 4,
+    size: {512, 512},
+    seed: idx * 100  # Different seed per image
+  ]
+
+  case Margarine.generate(prompt, opts) do
+    {:ok, image} ->
+      path = "/tmp/margarine_batch_#{idx}.png"
+      Margarine.Image.save(image, path)
+      {prompt, path}
+
+    {:error, reason} ->
+      IO.puts("❌ Failed: #{inspect(reason)}")
+      nil
+  end
+end)
+|> Enum.reject(&is_nil/1)
+
+IO.puts("\n✅ Sequential generation complete! Generated #{length(batch_results)} images")
+
+# Display all images with their prompts
+images_to_display = Enum.map(batch_results, fn {prompt, path} ->
+  [
+    Kino.Markdown.new("**Prompt:** #{prompt}"),
+    Kino.Image.new(File.read!(path), :png)
+  ]
+end)
+|> List.flatten()
+
+Kino.Layout.grid(images_to_display, columns: 1)
+```
+
+## Tips & Best Practices
+
+### Prompt Engineering
+
+**Good prompts are specific and descriptive:**
+
+* ✅ "a fluffy orange cat sitting on a wooden fence, golden hour lighting, photorealistic"
+* ❌ "cat"
+
+**Use quality modifiers:**
+
+* "highly detailed", "8k", "professional photography"
+* "digital art", "oil painting", "watercolor"
+* "cinematic lighting", "dramatic shadows"
+
+**Avoid common pitfalls:**
+
+* Don't use negative prompts (FLUX doesn't support them)
+* Keep prompts focused (one main subject)
+* Be specific about style and quality
+
+### Memory Management
+
+**If you run out of memory:**
+
+1. Close other applications
+2. Use smaller image sizes (512x512 instead of 1024x1024)
+3. Use FLUX Schnell instead of Dev
+4. Restart your Elixir runtime to clear cached models
+
+### Performance Tips
+
+**First run:**
+
+* Takes 2-5 minutes (model download)
+* Requires internet connection
+* ~12GB download cached in `~/.cache/huggingface/`
+
+**Subsequent runs:**
+
+* FLUX Schnell: ~30-60 seconds
+* FLUX Dev: ~3-5 minutes
+
+**Speed up generation:**
+
+* Use smaller images (512x512 vs 1024x1024)
+* Use FLUX Schnell (4 steps vs 28 steps)
+* Generate similar prompts together (future: true GPU batching will be faster)
+
+## Troubleshooting
+
+### Common Errors
+
+**Out of Memory (OOM)**
+
+```
+[Margarine.PythonxServer] ✗ Insufficient memory
+```
+
+**Solution:** Close applications, use smaller images, or use FLUX Schnell
+
+**HuggingFace Token Error (FLUX Dev only)**
+
+```
+Repository not found or access denied
+```
+
+**Solution:** Set `HF_TOKEN` environment variable with valid token
+
+**Model Download Timeout**
+
+```
+Connection timeout
+```
+
+**Solution:** Check internet connection, try again (download resumes)
+
+**CUDA/MPS Not Available**
+
+```
+CUDA is not available
+```
+
+**Solution:** Models will fall back to CPU (very slow). Consider upgrading hardware.
+
+## Next Steps
+
+Now that you've generated your first images with Margarine, you can:
+
+1. **Explore the API**: Check out `Margarine` module documentation
+2. **Integrate into your app**: Use Margarine in Phoenix LiveView, CLI tools, etc.
+3. **Experiment with prompts**: Try different styles and subjects
+4. **Optimize for production**: Implement caching, queuing, and error handling
+
+## Resources
+
+* **Documentation**: [HexDocs](https://hexdocs.pm/margarine)
+* **GitHub**: [anthropics/margarine](https://github.com/anthropics/margarine)
+* **FLUX Paper**: [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
+* **Prompt Guide**: [FLUX Prompting Tips](https://huggingface.co/black-forest-labs/FLUX.1-schnell#prompting-tips)
+
+## License
+
+Margarine is licensed under MIT.
+
+**Model Licenses:**
+
+* FLUX Schnell: Apache 2.0 (free commercial use)
+* FLUX Dev: Non-commercial (license required for commercial use)
+
+---
+
+Happy generating! 🎨✨

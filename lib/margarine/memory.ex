@@ -183,6 +183,27 @@ defmodule Margarine.Memory do
   end
 
   @doc """
+  Checks available memory and returns detailed information.
+
+  Alias for available_memory/0 with slightly different return format.
+
+  ## Examples
+
+      {:ok, %{available_bytes: 50_000_000_000, ...}} = Margarine.Memory.check_available()
+
+  """
+  @spec check_available() :: {:ok, map()} | {:error, String.t()}
+  def check_available do
+    case available_memory() do
+      {:ok, info} ->
+        {:ok, Map.put(info, :available_bytes, info.available)}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  @doc """
   Converts megabytes to bytes.
 
   ## Examples

@@ -1,6 +1,8 @@
-# Margarine - Elixir Image Generation Library
+# Margarine - Elixir Image Generation Library 🧈
 
-**"I Can't Believe It's Not Butter... I Mean Python!"**
+**"I Can't Believe It's Not Real Art!"**
+
+> **Why "Margarine"?** Image generation is artificial - it emulates real photographs and artists. Like margarine vs butter, it's synthetic but pretty good! A playful reminder not to take ourselves too seriously. 😄
 
 ---
 
@@ -12,9 +14,13 @@ We have `ck` (C-K, pronounced "seek") available for semantic grep - a way to cas
 
 ---
 
-## 🚧 CONTINUATION PLAN: FLUX Integration (Phase 1.5)
+## 🚧 CONTINUATION PLAN: Stable Diffusion XL Integration (Phase 2)
 
-**Status:** Phase 1 MVP complete (10/10 beads) - all infrastructure ready. Now need to wire up actual FLUX generation.
+**Status:** FLUX integration complete! Now adding SDXL for text2img and img2img support.
+
+## 🚧 CONTINUATION PLAN: FLUX Integration (Phase 1.5) ✅ COMPLETE
+
+**Status:** Phase 1 MVP complete (10/10 beads) - all infrastructure ready. FLUX generation working!
 
 **What's Done:**
 - ✅ All core modules (Config, Memory, Image, Pipeline, Schedulers)
@@ -72,6 +78,529 @@ We have `ck` (C-K, pronounced "seek") available for semantic grep - a way to cas
 - Focus on getting it working first, then add tests if coverage drops
 
 **Estimated Effort:** 2-3 hours for complete integration
+
+---
+
+## 📋 SDXL Integration Plan (Phase 2)
+
+### Reference Implementation
+
+Working SDXL code in `~/code/genericjam`:
+- **Elixir modules**: `lib/genericjam/image_generation/service.ex`
+- **Python inference**: `priv/python/model_inference.py`
+- **Architecture**: Port-based (not Pythonx) with JSON communication
+- **Features**: text2img + img2img with `denoising_strength` parameter
+
+### Implementation Approach
+
+**Strategy**: Adapt FLUX Pythonx architecture for SDXL while reusing as much infrastructure as possible.
+
+**Architecture (Same as FLUX):**
+```
+Elixir Pipeline (orchestration, scheduling, state management)
+    ↓
+PythonxServer GenServer (holds loaded model, shared memory)
+    ↓
+Python (model inference only via Pythonx)
+    ↓
+Nx ←→ Shared Memory ←→ NumPy (zero-copy)
+```
+
+**Pipeline Unification:**
+- Text2img: Generate random noise → pass to unified pipeline
+- Img2img: VAE encode image → pass to unified pipeline
+- **After first step, both are identical** - just denoising latents!
+- Single `Pipeline.denoise/1` function handles both cases
+
+**Design Principle: Universal Composability** 🎨
+A key goal is to **mix and match schedulers AND models** during generation.
+
+**Core Insight**: Everything is img2img + prompt. Text2img is just img2img starting from pure noise.
+
+**At each step, you have:**
+- Current latent (noisy image at some noise level)
+- Current timestep (how noisy it is: 1.0 = pure noise, 0.0 = clean image)
+- Prompt (what you want)
+
+**You can hand this to ANY model** and say "denoise this one step" because:
+- Both FLUX and SDXL use the same VAE (same latent space)
+- Both use 16-channel latents at 1/8 resolution
+- A "partially denoised image" is just an image - any model can continue from it
+- The timestep tells the model "treat this as if it's at step X"
+
+**Two types of composability:**
+
+1. **Scheduler Mixing** (same model, different scheduler)
+   - SDXL + DDIM (10 steps) → SDXL + Euler (10 steps)
+   - Same model, different denoising strategy
+
+2. **Cross-Model Mixing** (different models, any schedulers)
+   - FLUX + Euler (5 steps) → SDXL + DDIM (10 steps) → FLUX + Euler (5 steps)
+   - Each model continues denoising from where the last left off
+   - Models bring their own "style" to the denoising process
+
+**Why this works:**
+- Shared latent space (same VAE)
+- Denoising is a continuous process
+- Each step just says "make it slightly less noisy toward the prompt"
+- Different models = different artistic interpretations of the same denoising task
+
+**Benefits:**
+- Mix FLUX's artistic style with SDXL's detail refinement
+- Experiment with model transitions at different noise levels
+- Show step-by-step progression (not a black box!)
+- Elixir schedulers give us full control
+
+**Key differences from FLUX**:
+1. **Dual text encoders**: SDXL uses CLIP + CLIP-with-projection (not T5)
+2. **UNet instead of Transformer**: Different model architecture
+3. **Scheduler options**: Can use DDIM, Euler, DPMSolver++ (not just EulerFlow)
+4. **Time IDs**: SDXL requires additional time/size conditioning
+5. **IMG2IMG**: Requires VAE encoder to convert init image to latents
+6. **Latent compatibility**: Same 16-channel latent space as FLUX enables model mixing
+
+### Beads (Phase 2.1: Text2Image)
+
+1. **margarine-sdxl-py** - Create SDXL Python module
+   - Copy `priv/python/flux_pythonx.py` → `priv/python/sdxl_pythonx.py`
+   - Adapt from `genericjam/priv/python/model_inference.py`
+   - Functions: `initialize_model`, `encode_prompt`, `unet_forward_cfg`, `vae_decode`
+   - Handle dual CLIP encoders + pooled embeddings
+   - Add `get_time_ids()` helper for SDXL conditioning
+
+2. **margarine-sdxl-config** - Add SDXL model config
+   - Update `lib/margarine/config.ex`
+   - Add `:sdxl_base` and `:sdxl_turbo` model configs
+   - Model IDs: `stabilityai/stable-diffusion-xl-base-1.0`, `stabilityai/sdxl-turbo`
+   - Defaults: 20 steps (base), 1 step (turbo), guidance 7.5
+
+3. **margarine-sdxl-scheduler** - Add DDIM scheduler
+   - Create `lib/margarine/schedulers/ddim.ex`
+   - Pure Nx implementation of DDIM algorithm
+   - Port from `genericjam/lib/genericjam/diffusion/schedulers/ddim.ex`
+   - Support both SDXL and FLUX (scheduler-agnostic)
+
+4. **margarine-sdxl-server** - SDXL PythonxServer
+   - Create `lib/margarine/python/sdxl_pythonx_server.ex`
+   - Similar to FluxPythonxServer but call `sdxl_pythonx.py`
+   - Functions: `encode_prompt`, `unet_forward`, `vae_decode`, `generate_latents`
+   - Memory checking (SDXL base ~7GB, turbo ~7GB)
+
+5. **margarine-sdxl-pipeline** - SDXL generation pipeline
+   - Create `lib/margarine/pipelines/sdxl_text2image.ex`
+   - Modeled after `lib/margarine/pipeline.ex` (FLUX version)
+   - Steps: prepare → encode_prompt → scheduler_init → initial_latents → denoising → vae_decode
+   - Support both DDIM and Euler schedulers
+
+6. **margarine-api-sdxl** - Update public API
+   - Update `lib/margarine.ex` to route SDXL models
+   - Detect model type (flux_* vs sdxl_*) and use appropriate pipeline
+   - Keep same `Margarine.generate/2` interface
+
+### Beads (Phase 2.2: Image-to-Image)
+
+7. **margarine-img2img-py** - Add VAE encoder to Python
+   - Add `vae_encode(image_np)` to both `flux_pythonx.py` and `sdxl_pythonx.py`
+   - Converts image [H,W,3] uint8 → latents [B,C,H//8,W//8] float32
+   - Reference: `genericjam/priv/python/model_inference.py` `vae_encode()`
+
+8. **margarine-img2img-image** - Image preprocessing
+   - Update `lib/margarine/image.ex`
+   - Add `prepare_init_image/2` - resize and normalize to [-1, 1]
+   - Add `to_latent_size/1` - calculate latent dimensions (H//8, W//8)
+
+9. **margarine-img2img-scheduler** - Add noise to latents
+   - Add `add_noise/3` to scheduler behavior
+   - Implement in FluxEuler and DDIM
+   - Formula: `noisy = sqrt(alpha) * latents + sqrt(1-alpha) * noise`
+   - Used for img2img starting point
+
+10. **margarine-unified-pipeline** - Unified denoising pipeline
+    - **Key insight**: Text2img and img2img are the same after getting initial latents!
+    - Text2img: `prepare_random_latents/2` → `denoise_loop/1`
+    - Img2img: `prepare_image_latents/3` (encode + add noise) → `denoise_loop/1`
+    - **Same `denoise_loop/1` for both** - just takes latents + starting timestep
+    - Pipeline state: `%{latents, timestep, prompt_embeds, scheduler, steps_remaining}`
+    - Example: Img2img with strength=0.7 starts at timestep 0.7, does 14/20 steps
+
+11. **margarine-img2img-api** - Public IMG2IMG API
+    - Update `lib/margarine.ex`
+    - Add `Margarine.img2img/2` function
+    - Params: `init_image`, `prompt`, `denoising_strength`, etc.
+    - Validate init_image path exists
+
+### Beads (Phase 2.3: Universal Composability) 🎨
+
+**Both scheduler mixing AND cross-model mixing - it's all just img2img!**
+
+12. **margarine-stepped-api** - Universal stepped generation API
+    - Add `Margarine.init_generation/2` - Initialize with prompt + starting latents
+    - Add `Margarine.step_generation/3` - Run N steps with model + scheduler + timestep
+    - Add `Margarine.finalize_generation/1` - Decode latents to image
+    - Add `Margarine.get_current_latents/1` - Inspect intermediate state
+    - Session state: `%{latents, timestep, total_steps_taken}`
+    - **Key**: Pass current timestep to model ("pretend you're at step X")
+
+13. **margarine-session-manager** - Generation session storage
+    - Create `lib/margarine/session_manager.ex` - ETS-based session storage
+    - Store active generation sessions with TTL (30 min)
+    - Functions: `create_session/1`, `get_session/1`, `update_session/2`, `delete_session/1`
+    - Store prompt per-model (FLUX needs T5 embeds, SDXL needs CLIP)
+    - Auto-cleanup expired sessions
+
+14. **margarine-timestep-management** - Universal timestep handling
+    - Normalize timesteps to [0.0, 1.0] range across all schedulers
+    - Map to model-specific ranges (FLUX: 1.0→0.0, SDXL: depends on scheduler)
+    - Track "noise level" independently of model/scheduler
+    - Allow arbitrary starting points (for img2img and model switching)
+
+15. **margarine-universal-api** - Composable pipeline API
+    - Add `Margarine.generate_composed/2` - Universal composition
+    - Accepts `pipeline:` with `{model, scheduler, steps}` tuples
+    - Works for same-model (scheduler mixing) OR cross-model
+    - Handles prompt encoding per-model automatically
+    - Example: `[{:flux_schnell, :euler, 5}, {:sdxl_base, :ddim, 10}, {:flux_schnell, :euler, 5}]`
+
+### Beads (Phase 2.5: Testing & Documentation)
+
+17. **margarine-sdxl-tests** - SDXL integration tests
+    - Add `test/integration/sdxl_generation_test.exs`
+    - Test text2img with `sdxl_base`
+    - Test reproducibility with seeds
+    - Mark with `@tag :integration`
+
+18. **margarine-img2img-tests** - IMG2IMG integration tests
+    - Test img2img with both FLUX and SDXL
+    - Test various denoising strengths (0.3, 0.5, 0.7)
+    - Verify output matches init image dimensions
+
+19. **margarine-composability-tests** - Universal composability tests
+    - Test scheduler mixing: SDXL with DDIM (10) → Euler (10)
+    - Test cross-model: FLUX (5) → SDXL (10) → FLUX (5)
+    - Test different transition points (early, mid, late)
+    - Verify latents remain valid across transitions
+    - Compare composed vs single-model generation quality
+    - Save intermediate images to show progression (not a black box!)
+
+20. **margarine-sdxl-docs** - Documentation
+    - Update README with SDXL examples
+    - Document model differences (FLUX vs SDXL)
+    - Add img2img usage examples
+    - Add scheduler mixing examples
+    - Add cross-model mixing examples
+    - Document core insight: "everything is img2img + prompt"
+    - Show step-by-step image progression
+    - Update HexDocs
+
+### File Structure
+
+```
+lib/margarine/
+├── pipeline.ex                   # FLUX unified pipeline (existing)
+├── pipelines/
+│   └── sdxl.ex                   # SDXL unified pipeline (new, same structure as FLUX)
+├── python/
+│   ├── pythonx_server.ex         # FLUX PythonxServer (existing)
+│   └── sdxl_pythonx_server.ex    # SDXL PythonxServer (new)
+├── schedulers/
+│   ├── flux_euler.ex             # Rectified flow (existing)
+│   └── ddim.ex                   # DDIM scheduler (new)
+
+priv/python/
+├── flux_pythonx.py               # FLUX inference (existing)
+└── sdxl_pythonx.py               # SDXL inference (new)
+
+test/integration/
+├── flux_generation_test.exs      # FLUX tests (existing)
+├── sdxl_generation_test.exs      # SDXL tests (new)
+└── img2img_test.exs              # IMG2IMG tests (new)
+```
+
+**Pipeline Architecture (All Elixir):**
+
+```elixir
+# Text2img flow
+Margarine.generate(prompt, model: :sdxl_base)
+  ↓
+Pipeline.prepare_random_latents()  # Pure Elixir: Nx.random_normal()
+  ↓
+Pipeline.denoise_loop()            # Pure Elixir orchestration
+  ↓ (each step)
+  Scheduler.step()                 # Pure Nx math
+  PythonxServer.unet_forward()     # Python inference (zero-copy)
+  ↓
+Pipeline.vae_decode()              # Python VAE (zero-copy)
+
+# Img2img flow
+Margarine.img2img(init_image, prompt, strength: 0.7)
+  ↓
+Image.load_and_preprocess()        # Pure Elixir: Vix/Image
+  ↓
+Pipeline.prepare_image_latents()   # Python VAE encode + Nx noise
+  ↓
+Pipeline.denoise_loop()            # 👈 SAME FUNCTION AS TEXT2IMG!
+  (continues from timestep 0.7)
+```
+
+**Key Design:**
+- **All orchestration in Elixir** (scheduling, state, control flow)
+- **Python only for inference** (UNet forward, VAE encode/decode)
+- **GenServer holds model** between steps (no reloading)
+- **Shared memory** (Nx ↔ NumPy) for zero-copy transfers
+
+**Current FLUX Pipeline (Reference):**
+Look at `lib/margarine/pipeline.ex` - this is the pattern to follow for SDXL:
+
+```elixir
+defmodule Margarine.Pipeline do
+  # Main entry point
+  def generate(state) do
+    with {:ok, server} <- get_or_start_server(state.model),
+         {:ok, embeds} <- encode_prompt(server, state),
+         {:ok, scheduler} <- initialize_scheduler(state),
+         {:ok, latents} <- generate_initial_latents(server, state),
+         {:ok, final_latents} <- denoising_loop(server, state, scheduler, latents, embeds),
+         {:ok, image} <- decode_image(server, final_latents) do
+      {:ok, image}
+    end
+  end
+
+  # Pure Elixir: Generate random noise
+  defp generate_initial_latents(server, state) do
+    PythonxServer.generate_latents(server, height, width, seed)
+  end
+
+  # Pure Elixir orchestration
+  defp denoising_loop(server, state, scheduler, latents, embeds) do
+    Enum.reduce_while(timesteps, latents, fn {timestep, idx}, current_latents ->
+      # Pure Nx scheduler math
+      # Python inference (zero-copy)
+      # Update latents
+    end)
+  end
+end
+```
+
+**SDXL will be identical structure**, just:
+- Different model server (SDXLPythonxServer)
+- Different embeddings (CLIP instead of T5)
+- Same denoising loop pattern
+
+### API Examples
+
+**Text2Image with SDXL**:
+```elixir
+# SDXL Base (20 steps, high quality)
+{:ok, image} = Margarine.generate("a red panda", model: :sdxl_base, steps: 20)
+
+# SDXL Turbo (1 step, fast)
+{:ok, image} = Margarine.generate("a red panda", model: :sdxl_turbo, steps: 1)
+```
+
+**Image-to-Image**:
+```elixir
+# Light modification (keep most of original)
+{:ok, image} = Margarine.img2img(
+  init_image: "photo.png",
+  prompt: "turn into a watercolor painting",
+  denoising_strength: 0.3,  # 30% change
+  model: :sdxl_base
+)
+
+# Heavy modification
+{:ok, image} = Margarine.img2img(
+  init_image: "sketch.png",
+  prompt: "realistic photograph",
+  denoising_strength: 0.8,  # 80% change
+  model: :flux_schnell
+)
+```
+
+**Universal Composability** 🎨:
+```elixir
+# Initialize generation with FLUX
+{:ok, session_id} = Margarine.init_generation(
+  prompt: "a cyberpunk cityscape at sunset",
+  model: :flux_schnell,
+  size: {1024, 1024},
+  seed: 42
+)
+
+# Do first 5 steps with FLUX
+{:ok, session_id} = Margarine.step_generation(
+  session_id,
+  model: :flux_schnell,
+  steps: 5,
+  scheduler: :euler
+)
+
+# Continue 10 steps with SDXL for detail refinement
+{:ok, session_id} = Margarine.step_generation(
+  session_id,
+  model: :sdxl_base,
+  steps: 10,
+  scheduler: :ddim
+)
+
+# Finish last 5 steps with FLUX for artistic style
+{:ok, session_id} = Margarine.step_generation(
+  session_id,
+  model: :flux_schnell,
+  steps: 5,
+  scheduler: :euler
+)
+
+# Decode final latents to image
+{:ok, image} = Margarine.finalize_generation(session_id)
+
+# Bonus: Get intermediate images to show progression!
+{:ok, intermediate} = Margarine.get_current_latents(session_id)
+                      |> Margarine.decode_latents(:flux_schnell)
+```
+
+**Simplified Composable API**:
+```elixir
+# Cross-model mixing in one call
+{:ok, image} = Margarine.generate_composed(
+  prompt: "a cyberpunk cityscape at sunset",
+  size: {1024, 1024},
+  seed: 42,
+  pipeline: [
+    {:flux_schnell, :euler, 5},   # FLUX's artistic style
+    {:sdxl_base, :ddim, 10},      # SDXL's detail refinement
+    {:flux_schnell, :euler, 5}    # FLUX final polish
+  ],
+  save_intermediates: true  # Save images at each transition
+)
+
+# Same-model scheduler mixing (also works!)
+{:ok, image} = Margarine.generate_composed(
+  prompt: "mountain landscape",
+  model: :sdxl_base,
+  pipeline: [
+    {:sdxl_base, :ddim, 10},   # Exploration phase
+    {:sdxl_base, :euler, 10}   # Convergence phase
+  ]
+)
+```
+
+### Key Technical Details
+
+**SDXL Text Encoding**:
+- Dual encoders: CLIP-ViT-L (768d) + CLIP-ViT-G-with-projection (1280d)
+- Concatenated: 2048d final embedding
+- Pooled embeddings from second encoder used for conditioning
+
+**Time IDs (SDXL-specific)**:
+```python
+# Additional conditioning beyond text
+time_ids = [
+  original_height,   # 1024
+  original_width,    # 1024
+  crop_top,          # 0
+  crop_left,         # 0
+  target_height,     # 1024
+  target_width       # 1024
+]
+```
+
+**IMG2IMG Denoising Strength**:
+- `strength = 0.0`: No change (start at step 0)
+- `strength = 0.5`: Moderate change (start at step 10/20)
+- `strength = 1.0`: Complete change (start at step 20/20, equivalent to text2img)
+- Formula: `start_step = int((1 - strength) * num_steps)`
+
+**Memory Requirements**:
+- SDXL Base: ~7GB VRAM (vs FLUX's ~14GB)
+- SDXL Turbo: ~7GB VRAM
+- Lower than FLUX, so should work well on 64GB unified memory
+
+**The Core Insight: Everything is IMG2IMG** 🎨
+
+Text2img is just a special case of img2img where you start with pure noise!
+
+```
+At any point in generation, you have:
+1. Latent (partially denoised image)
+2. Timestep (noise level: 1.0 = pure noise, 0.0 = clean)
+3. Prompt (what you want)
+
+You can hand these to ANY model and say "denoise one more step"
+```
+
+**Universal Latent Compatibility**:
+Both FLUX and SDXL use the same VAE, so latents are interchangeable:
+
+```
+Shared Latent Space:
+- Channels: 16 (both models)
+- Spatial resolution: H/8 × W/8 (both use 8x downsampling)
+- Value range: Normalized by VAE scaling factor (~0.13)
+- Data type: float32 for Nx operations
+```
+
+**How Model Switching Works**:
+1. **FLUX denoises for 5 steps** → produces latent + timestep
+2. **Hand to SDXL** → "here's a latent at timestep 0.75, denoise it"
+3. **SDXL denoises for 10 steps** → produces latent + new timestep
+4. **Hand back to FLUX** → "here's a latent at timestep 0.25, finish it"
+
+Each model brings its own "artistic interpretation" to the denoising process.
+
+**What to handle when switching**:
+1. **Prompt embeddings**: Re-encode prompt with target model's encoders
+   - FLUX: T5-XXL (4096d)
+   - SDXL: CLIP concat (2048d) + pooled embeds + time_ids
+2. **Timestep mapping**: Normalize to [0,1], map to model-specific convention
+3. **That's it!** Latents just flow through unchanged
+
+**Why show progression**:
+- Not a black box - see how image evolves at each transition
+- Understand what each model contributes
+- Experiment with transition timing (early vs late)
+- Educational and debuggable
+
+### Testing Strategy
+
+**Fast tests (unit)**:
+- Test schedulers (DDIM) with mock data
+- Test image preprocessing functions
+- Test parameter validation
+
+**Integration tests**:
+- Text2img: 512x512 for speed, 4 steps
+- IMG2IMG: Use test fixtures, small images
+- Test both SDXL and FLUX pipelines
+- Sequential execution (async: false)
+
+### Estimated Effort
+
+**Phase 2.1 (Text2Image)**: ~4-6 hours
+- Python module adaptation
+- DDIM scheduler implementation
+- Pipeline & server setup
+
+**Phase 2.2 (IMG2IMG)**: ~3-4 hours
+- VAE encoder integration
+- Scheduler noise addition
+- IMG2IMG pipeline
+
+**Phase 2.3 (Universal Composability)**: ~4-6 hours 🎨
+- Stepped generation API (simpler than expected!)
+- Session management (ETS)
+- Timestep normalization and tracking
+- Per-model prompt encoding
+- Works for scheduler mixing AND cross-model (same architecture)
+
+**Phase 2.5 (Testing/Docs)**: ~3-4 hours
+- Integration tests (SDXL, IMG2IMG, composability)
+- Document core insight: "everything is img2img"
+- Show step-by-step image progression examples
+- Example scripts
+
+**Total**: ~14-18 hours for complete SDXL + IMG2IMG + Universal Composability
+
+**Note**: Universal composability is simpler than originally thought! Once you understand "everything is img2img + timestep", both scheduler mixing and cross-model mixing use the same infrastructure.
 
 ---
 
@@ -179,6 +708,24 @@ mix test --include integration      # All tests including integration
 - Download ~12GB FLUX model on first run
 - Require 16GB+ RAM or 12GB+ VRAM
 - Take 5-30 seconds per test
+- **MUST run sequentially (async: false)** to avoid loading multiple model instances
+- Each test has 5-minute timeout to handle model loading
+
+**CRITICAL: Memory Management**
+- Integration tests use `async: false` to prevent parallel execution
+- Tests share a single PythonxServer instance via `setup_all` callback
+- This prevents loading the 12GB model multiple times simultaneously
+- Running tests in parallel will cause OOM kills on machines with <32GB RAM
+
+**Known Benign Warning:**
+You may see this warning at the end of integration tests:
+```
+resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+```
+This is a known benign warning from Python's multiprocessing module when the Python
+process is terminated by Elixir/BEAM. It does NOT indicate a real memory leak.
+The semaphore is properly cleaned up by the OS at process exit.
+See: https://github.com/apple/ml-stable-diffusion/issues/8
 
 For CI/CD, run fast tests on every commit, integration tests on merges to main.
 

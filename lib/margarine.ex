@@ -2,7 +2,7 @@ defmodule Margarine do
   @moduledoc """
   Margarine - AI Image Generation for Elixir
 
-  "I Can't Believe It's Not Butter... I Mean Python!"
+  "I Can't Believe It's Not the Work of a Real:TM: Artist!"
 
   Margarine brings FLUX image generation to Elixir using Nx, Pythonx, and PyTorch.
   Generate beautiful images from text prompts with a clean, Elixir-native API.

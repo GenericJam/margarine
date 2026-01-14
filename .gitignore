@@ -24,3 +24,5 @@ margarine-*.tar
 priv/python/__pycache__/
 output_basic.png
 output_*.png
+
+CLAUDE.md

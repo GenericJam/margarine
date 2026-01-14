@@ -12,6 +12,12 @@ Key differences from flux_pipeline.py:
 - Same model loading and inference logic
 """
 
+# Suppress known benign warning from Python's multiprocessing resource_tracker
+# This warning appears when Python processes are terminated by external processes (Elixir)
+# See: https://github.com/apple/ml-stable-diffusion/issues/8
+import warnings
+warnings.filterwarnings('ignore', '.*resource_tracker.*', UserWarning)
+
 import torch
 import numpy as np
 from diffusers import FluxPipeline

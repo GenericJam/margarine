@@ -366,8 +366,46 @@ result
   end
 
   @impl true
-  def terminate(_reason, _state) do
-    Logger.info("[Margarine.PythonxServer] Shutting down")
+  def terminate(reason, state) do
+    Logger.info("[Margarine.PythonxServer] Shutting down (reason: #{inspect(reason)})")
+
+    # Only attempt cleanup if we successfully loaded models
+    if state.globals != nil and not state.loading do
+      Logger.info("[Margarine.PythonxServer] Cleaning up Python resources...")
+
+      cleanup_code = """
+try:
+    # Call clear_memory to free model resources
+    flux_pythonx.clear_memory()
+
+    # Force garbage collection
+    import gc
+    gc.collect()
+
+    # Explicitly delete global references
+    if '_models' in dir(flux_pythonx):
+        flux_pythonx._models = None
+
+    cleanup_success = True
+except Exception as e:
+    print(f"[FluxPythonx] Cleanup error: {e}")
+    cleanup_success = False
+
+cleanup_success
+"""
+
+      case Pythonx.eval(cleanup_code, state.globals) do
+        {true, _} ->
+          Logger.info("[Margarine.PythonxServer] ✓ Python resources cleaned up")
+
+        {false, _} ->
+          Logger.warning("[Margarine.PythonxServer] Python cleanup reported errors (check logs)")
+
+        {:error, error} ->
+          Logger.warning("[Margarine.PythonxServer] Failed to cleanup Python resources: #{inspect(error)}")
+      end
+    end
+
     :ok
   end
 

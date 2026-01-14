@@ -1,12 +1,11 @@
-# Margarine
+# Margarine 🧈
 
 <p align="center">
-  <strong>"I Can't Believe It's Not Butter... I Mean Python!"</strong>
+  <img src="assets/logo.png" alt="Margarine Logo" width="400"/>
 </p>
 
----
 
-AI-powered image generation for Elixir using FLUX and Stable Diffusion.
+AI-powered image generation for Elixir using FLUX.
 
 Margarine brings state-of-the-art text-to-image generation to the Elixir ecosystem with a clean, native API. Generate beautiful images from text prompts with just a few lines of code.
 
@@ -299,10 +298,27 @@ The first run takes 2-5 minutes to download Python and dependencies. Subsequent 
 
 ## Documentation
 
-- **API Docs**: [hexdocs.pm/margarine](https://hexdocs.pm/margarine) (coming soon)
+- **Getting Started Guide**: Interactive Livebook tutorial at [`notebooks/getting_started.livemd`](notebooks/getting_started.livemd)
+- **API Docs**: [hexdocs.pm/margarine](https://hexdocs.pm/margarine)
 - **Examples**: See `examples/` directory
-- **Architecture**: See `CLAUDE.md` for development notes
 - **Changelog**: See `CHANGELOG.md`
+
+### Try the Interactive Tutorial
+
+The best way to learn Margarine is through our interactive Livebook:
+
+```bash
+# Open the getting started guide
+livebook open notebooks/getting_started.livemd
+```
+
+The notebook includes:
+- First image generation walkthrough
+- Model selection (Schnell vs Dev)
+- Parameter exploration with live previews
+- Seed comparison for reproducibility
+- Sequential generation examples
+- Tips and troubleshooting
 
 ## License
 
