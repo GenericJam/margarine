@@ -27,12 +27,15 @@ Margarine brings state-of-the-art text-to-image generation to the Elixir ecosyst
 def deps do
   [
     {:margarine, "~> 0.1.0"},
-    {:emlx, "~> 0.1"}  # For Apple Silicon
-    # OR
+
+    # REQUIRED: Choose ONE Nx backend based on your hardware
+    {:emlx, "~> 0.1"}  # For Apple Silicon (M1/M2/M3/M4)
     # {:exla, "~> 0.9"}  # For NVIDIA/AMD GPU or CPU
   ]
 end
 ```
+
+**Important:** You must install either EMLX or EXLA alongside Margarine. The backend handles GPU/CPU acceleration for tensor operations.
 
 ```elixir
 # Simple text-to-image
