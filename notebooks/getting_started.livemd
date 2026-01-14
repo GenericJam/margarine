@@ -408,7 +408,7 @@ Now that you've generated your first images with Margarine, you can:
 ## Resources
 
 * **Documentation**: [HexDocs](https://hexdocs.pm/margarine)
-* **GitHub**: [anthropics/margarine](https://github.com/anthropics/margarine)
+* **GitHub**: [GenericJam/margarine](https://github.com/GenericJam/margarine)
 * **FLUX Paper**: [Flow Matching for Generative Modeling](https://arxiv.org/abs/2210.02747)
 * **Prompt Guide**: [FLUX Prompting Tips](https://huggingface.co/black-forest-labs/FLUX.1-schnell#prompting-tips)
 

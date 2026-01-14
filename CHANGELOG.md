@@ -103,6 +103,13 @@ Built with Test-Driven Development practices by the Margarine team.
 
 ## [Unreleased]
 
+### Fixed
+- **Automatic UV Installation** - Added Pythonx configuration to auto-install UV package manager
+  - No more "UV not found" errors on fresh installations
+  - UV downloads and installs automatically at compile time
+  - Bundled with Elixir releases for offline deployment
+  - Added `config/config.exs` with `uv_version: "0.8.5"`
+
 ### Planned for Phase 2: Advanced FLUX
 - Streaming intermediate results during generation
 - Batch generation for multiple prompts
@@ -120,4 +127,4 @@ Built with Test-Driven Development practices by the Margarine team.
 - LoRA support
 - ControlNet integration
 
-[0.1.0]: https://github.com/yourorg/margarine/releases/tag/v0.1.0
+[0.1.0]: https://github.com/GenericJam/margarine/releases/tag/v0.1.0

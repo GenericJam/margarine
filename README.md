@@ -85,12 +85,16 @@ config :nx,
 
 ### 3. First Run Setup
 
-On first run, Margarine will automatically:
-1. Download and install Python 3.11+ via UV (~100MB)
-2. Install PyTorch and dependencies (~500MB)
-3. Cache everything for instant subsequent runs
+**No manual installation required!** Margarine automatically handles everything:
 
-**This takes 2-5 minutes on first run.** For production deployments, we recommend running a "warm-up" generation when your server starts:
+1. **UV Package Manager** - Automatically downloaded and installed by Pythonx
+2. **Python 3.11+** - Downloaded via UV (~100MB)
+3. **PyTorch & Dependencies** - Installed via UV (~500MB)
+4. **Everything cached** - Instant subsequent runs
+
+**This takes 2-5 minutes on first run.** All you need is an internet connection and ~15GB disk space.
+
+For production deployments, we recommend running a "warm-up" generation when your server starts:
 
 ```elixir
 # In your application startup

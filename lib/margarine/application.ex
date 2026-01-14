@@ -100,7 +100,13 @@ defmodule Margarine.Application do
     rescue
       error ->
         Logger.error("[Margarine] Failed to initialize Python environment: #{inspect(error)}")
-        Logger.error("[Margarine] Make sure UV is installed and accessible")
+        Logger.error("""
+        [Margarine] Pythonx should automatically install UV if needed.
+        If you're seeing this error, please check:
+        1. Internet connection (first run downloads UV + Python + dependencies)
+        2. Disk space (~15GB required for models + dependencies)
+        3. File permissions in ~/.cache/pythonx/
+        """)
         reraise error, __STACKTRACE__
     end
   end

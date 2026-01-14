@@ -4,7 +4,7 @@ defmodule Margarine.MixProject do
   def project do
     [
       app: :margarine,
-      version: "0.1.0",
+      version: "0.1.1",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -18,7 +18,7 @@ defmodule Margarine.MixProject do
 
       # Hex package metadata
       name: "Margarine",
-      source_url: "https://github.com/yourorg/margarine",
+      source_url: "https://github.com/GenericJam/margarine",
       description: "AI-powered image generation for Elixir using FLUX and Stable Diffusion",
       package: package(),
       docs: docs()
@@ -62,8 +62,8 @@ defmodule Margarine.MixProject do
       name: "margarine",
       licenses: ["MIT"],
       links: %{
-        "GitHub" => "https://github.com/yourorg/margarine",
-        "Changelog" => "https://github.com/yourorg/margarine/blob/master/CHANGELOG.md"
+        "GitHub" => "https://github.com/GenericJam/margarine",
+        "Changelog" => "https://github.com/GenericJam/margarine/blob/master/CHANGELOG.md"
       },
       files: ~w(
         lib
@@ -71,6 +71,7 @@ defmodule Margarine.MixProject do
         test
         examples
         assets
+        config
         .formatter.exs
         mix.exs
         README.md
