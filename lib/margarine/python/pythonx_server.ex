@@ -225,7 +225,9 @@ result = flux_pythonx.encode_prompt(
 result
 """
 
-    call_globals = Map.merge(state.globals, %{
+    # MEMORY LEAK FIX: Use fresh globals dict with only essential modules + call data
+    # Don't merge and accumulate - create new dict each time
+    call_globals = build_call_globals(state.globals, %{
       "prompt" => prompt,
       "negative" => negative,
       "guidance" => guidance
@@ -236,9 +238,10 @@ result
         Logger.error("[Margarine.PythonxServer] encode_prompt failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
-      {result, new_globals} ->
+      {result, _new_globals} ->
+        # MEMORY LEAK FIX: Discard new_globals to prevent accumulation
         decoded = decode_pythonx_result(result)
-        {:reply, {:ok, decoded}, %{state | globals: new_globals}}
+        {:reply, {:ok, decoded}, state}
     end
   end
 
@@ -272,7 +275,9 @@ result = flux_pythonx.transformer_forward(
 result
 """
 
-    call_globals = Map.merge(state.globals, %{
+    # MEMORY LEAK FIX: Use fresh globals dict with only essential modules + call data
+    # This can be 200MB+ per call, so we must not accumulate!
+    call_globals = build_call_globals(state.globals, %{
       "latents_bin" => latents_bin,
       "latents_shape" => latents_shape,
       "prompt_embeds_bin" => prompt_embeds_bin,
@@ -288,9 +293,10 @@ result
         Logger.error("[Margarine.PythonxServer] transformer_forward failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
-      {result, new_globals} ->
+      {result, _new_globals} ->
+        # MEMORY LEAK FIX: Discard new_globals to prevent accumulation
         decoded = decode_pythonx_result(result)
-        {:reply, {:ok, decoded}, %{state | globals: new_globals}}
+        {:reply, {:ok, decoded}, state}
     end
   end
 
@@ -307,7 +313,8 @@ result = flux_pythonx.vae_decode(latents_np)
 result
 """
 
-    call_globals = Map.merge(state.globals, %{
+    # MEMORY LEAK FIX: Use fresh globals dict
+    call_globals = build_call_globals(state.globals, %{
       "latents_bin" => latents_bin,
       "latents_shape" => latents_shape
     })
@@ -317,9 +324,10 @@ result
         Logger.error("[Margarine.PythonxServer] vae_decode failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
-      {result, new_globals} ->
+      {result, _new_globals} ->
+        # MEMORY LEAK FIX: Discard new_globals to prevent accumulation
         decoded = decode_pythonx_result(result)
-        {:reply, {:ok, decoded}, %{state | globals: new_globals}}
+        {:reply, {:ok, decoded}, state}
     end
   end
 
@@ -330,7 +338,8 @@ result = flux_pythonx.generate_latents(height, width, seed)
 result
 """
 
-    call_globals = Map.merge(state.globals, %{
+    # MEMORY LEAK FIX: Use fresh globals dict
+    call_globals = build_call_globals(state.globals, %{
       "height" => height,
       "width" => width,
       "seed" => seed
@@ -341,9 +350,10 @@ result
         Logger.error("[Margarine.PythonxServer] generate_latents failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
-      {result, new_globals} ->
+      {result, _new_globals} ->
+        # MEMORY LEAK FIX: Discard new_globals to prevent accumulation
         decoded = decode_pythonx_result(result)
-        {:reply, {:ok, decoded}, %{state | globals: new_globals}}
+        {:reply, {:ok, decoded}, state}
     end
   end
 
@@ -359,9 +369,10 @@ result
         Logger.error("[Margarine.PythonxServer] get_model_info failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
-      {result, new_globals} ->
+      {result, _new_globals} ->
+        # MEMORY LEAK FIX: Discard new_globals
         decoded = Pythonx.decode(result)
-        {:reply, {:ok, decoded}, %{state | globals: new_globals}}
+        {:reply, {:ok, decoded}, state}
     end
   end
 
@@ -395,14 +406,15 @@ cleanup_success
 """
 
       case Pythonx.eval(cleanup_code, state.globals) do
-        {true, _} ->
+        {result, _} when is_struct(result, Pythonx.Object) ->
+          # Python True/False are wrapped in Pythonx.Object
           Logger.info("[Margarine.PythonxServer] ✓ Python resources cleaned up")
-
-        {false, _} ->
-          Logger.warning("[Margarine.PythonxServer] Python cleanup reported errors (check logs)")
 
         {:error, error} ->
           Logger.warning("[Margarine.PythonxServer] Failed to cleanup Python resources: #{inspect(error)}")
+
+        other ->
+          Logger.debug("[Margarine.PythonxServer] Cleanup result: #{inspect(other)}")
       end
     end
 
@@ -410,6 +422,21 @@ cleanup_success
   end
 
   # Private Helpers
+
+  # MEMORY LEAK FIX: Build fresh globals dict with only essential modules
+  # This prevents accumulation of large binary data across calls
+  defp build_call_globals(base_globals, call_data) do
+    # Only keep essential module references from base_globals
+    # Discard any accumulated data from previous calls
+    essential_keys = ["flux_pythonx", "initialized", "init_result"]
+
+    essential_globals =
+      base_globals
+      |> Map.take(essential_keys)
+      |> Map.merge(call_data)
+
+    essential_globals
+  end
 
   defp decode_pythonx_result(result) do
     decoded = Pythonx.decode(result)

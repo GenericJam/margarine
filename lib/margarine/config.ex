@@ -24,7 +24,7 @@ defmodule Margarine.Config do
     enable_telemetry: true
   }
 
-  @valid_models [:flux_schnell, :flux_dev]
+  @valid_models [:flux_schnell, :flux_dev, :sdxl_base, :sdxl_turbo]
 
   @doc """
   Gets a configuration value.
@@ -88,6 +88,22 @@ defmodule Margarine.Config do
   end
 
   @doc """
+  Get HuggingFace model ID for a given model type.
+
+  Returns the full HuggingFace model repository path.
+  """
+  @spec get_model_id(atom()) :: String.t()
+  def get_model_id(model) do
+    case model do
+      :flux_schnell -> "black-forest-labs/FLUX.1-schnell"
+      :flux_dev -> "black-forest-labs/FLUX.1-dev"
+      :sdxl_base -> "stabilityai/stable-diffusion-xl-base-1.0"
+      :sdxl_turbo -> "stabilityai/sdxl-turbo"
+      _ -> raise "Unsupported model: #{inspect(model)}"
+    end
+  end
+
+  @doc """
   Get default generation options for a specific model.
 
   Returns a map with default values for steps, guidance_scale, and size.
@@ -107,6 +123,20 @@ defmodule Margarine.Config do
           steps: 28,
           guidance_scale: 3.5,
           size: {1024, 1024}
+        }
+
+      :sdxl_base ->
+        %{
+          steps: 20,
+          guidance_scale: 7.5,
+          size: {1024, 1024}
+        }
+
+      :sdxl_turbo ->
+        %{
+          steps: 1,
+          guidance_scale: 0.0,
+          size: {512, 512}
         }
 
       _ ->

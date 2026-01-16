@@ -200,6 +200,9 @@ defmodule Margarine.Pipeline do
 
     result =
       Enum.reduce_while(Enum.with_index(timesteps), latents, fn {timestep, idx}, current_latents ->
+        # MEMORY LEAK FIX: Monitor memory before each step
+        check_memory_and_gc(server, idx + 1, num_steps)
+
         Logger.debug("[Margarine.Pipeline] Step #{idx + 1}/#{num_steps}, timestep: #{timestep}")
 
         case PythonxServer.transformer_forward(
@@ -234,6 +237,25 @@ defmodule Margarine.Pipeline do
 
   defp decode_to_image(server, latents) do
     Logger.info("[Margarine.Pipeline] Decoding latents to image...")
+
+    # MEMORY LEAK FIX: Check memory before VAE decode (most memory-intensive operation)
+    case Margarine.Memory.available_memory() do
+      {:ok, info} ->
+        available_gb = Margarine.Memory.bytes_to_mb(info.available) / 1024
+        Logger.info(
+          "[Margarine.Pipeline] Memory before VAE decode: #{Float.round(available_gb, 1)}GB available"
+        )
+
+        if available_gb < 3.0 do
+          Logger.warning(
+            "[Margarine.Pipeline] Low memory detected (#{Float.round(available_gb, 1)}GB) - forcing Python GC before VAE decode"
+          )
+          force_python_gc(server)
+        end
+
+      {:error, reason} ->
+        Logger.debug("[Margarine.Pipeline] Could not check memory: #{reason}")
+    end
 
     case PythonxServer.vae_decode(server, latents) do
       {:ok, image_float} ->
@@ -293,10 +315,10 @@ defmodule Margarine.Pipeline do
     do: {:error, "guidance_scale must be >= 0.0, got: #{inspect(scale)}"}
 
   defp validate_size({w, h}) when is_integer(w) and is_integer(h) and w > 0 and h > 0 do
-    # Check divisible by 8 (FLUX requirement)
-    case {rem(w, 8), rem(h, 8)} do
+    # Check divisible by 16 (FLUX requirement: 8 for VAE + 2 for 2x2 patching)
+    case {rem(w, 16), rem(h, 16)} do
       {0, 0} -> :ok
-      _ -> {:error, "size dimensions must be divisible by 8, got: {#{w}, #{h}}"}
+      _ -> {:error, "size dimensions must be divisible by 16 for FLUX, got: {#{w}, #{h}}"}
     end
   end
 
@@ -305,4 +327,48 @@ defmodule Margarine.Pipeline do
   defp validate_seed(nil), do: :ok
   defp validate_seed(seed) when is_integer(seed) and seed >= 0, do: :ok
   defp validate_seed(seed), do: {:error, "seed must be a non-negative integer, got: #{inspect(seed)}"}
+
+  # MEMORY LEAK FIX: Memory monitoring helpers
+  defp check_memory_and_gc(server, step_num, total_steps) do
+    case Margarine.Memory.available_memory() do
+      {:ok, info} ->
+        available_gb = Margarine.Memory.bytes_to_mb(info.available) / 1024
+
+        Logger.debug(
+          "[Margarine.Pipeline] Step #{step_num}/#{total_steps}: #{Float.round(available_gb, 1)}GB available"
+        )
+
+        # Force Python GC if memory drops below 5GB
+        if available_gb < 5.0 do
+          Logger.warning(
+            "[Margarine.Pipeline] Low memory detected (#{Float.round(available_gb, 1)}GB) - forcing Python GC"
+          )
+          force_python_gc(server)
+        end
+
+      {:error, _reason} ->
+        # Silently continue if we can't check memory
+        :ok
+    end
+  end
+
+  defp force_python_gc(_server) do
+    # Force Python garbage collection via Pythonx
+    # Note: We use a fresh globals dict here since GC doesn't need model state
+    code = """
+    import gc
+    gc.collect()
+    collected = True
+    """
+
+    case Pythonx.eval(code, %{}) do
+      {_result, _globals} ->
+        Logger.debug("[Margarine.Pipeline] ✓ Python GC completed")
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("[Margarine.Pipeline] Failed to run Python GC: #{inspect(reason)}")
+        :ok
+    end
+  end
 end

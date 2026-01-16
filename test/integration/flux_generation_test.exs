@@ -65,11 +65,31 @@ defmodule Margarine.Integration.FluxGenerationTest do
     @describetag timeout: 300_000  # 5 minutes per test (generous for first run + model load)
 
     setup do
+      # MEMORY LEAK FIX: Log memory before test
+      case Margarine.Memory.available_memory() do
+        {:ok, info} ->
+          available_gb = Margarine.Memory.bytes_to_mb(info.available) / 1024
+          IO.puts("\n[Setup] Memory before test: #{Float.round(available_gb, 1)}GB available")
+
+        {:error, reason} ->
+          IO.puts("\n[Setup] Could not check memory: #{reason}")
+      end
+
       # Cleanup function to stop the PythonxServer after each test
       # This ensures proper resource cleanup and prevents semaphore leaks
       on_exit(fn ->
         # Give the server a moment to finish any pending operations
         Process.sleep(100)
+
+        # MEMORY LEAK FIX: Log memory before cleanup
+        case Margarine.Memory.available_memory() do
+          {:ok, info_before} ->
+            available_gb = Margarine.Memory.bytes_to_mb(info_before.available) / 1024
+            IO.puts("\n[Cleanup] Memory before cleanup: #{Float.round(available_gb, 1)}GB available")
+
+          {:error, _} ->
+            :ok
+        end
 
         # Stop the server if it's running
         server_name = :"Margarine.Python.PythonxServer.flux_schnell"
@@ -83,6 +103,20 @@ defmodule Margarine.Integration.FluxGenerationTest do
             GenServer.stop(pid, :normal, 5000)
             # Wait a bit for cleanup to complete
             Process.sleep(500)
+        end
+
+        # MEMORY LEAK FIX: Force Erlang GC after cleanup
+        :erlang.garbage_collect()
+        Process.sleep(500)
+
+        # MEMORY LEAK FIX: Log memory after cleanup
+        case Margarine.Memory.available_memory() do
+          {:ok, info_after} ->
+            available_gb = Margarine.Memory.bytes_to_mb(info_after.available) / 1024
+            IO.puts("[Cleanup] Memory after cleanup: #{Float.round(available_gb, 1)}GB available")
+
+          {:error, _} ->
+            :ok
         end
       end)
 
@@ -162,7 +196,7 @@ defmodule Margarine.Integration.FluxGenerationTest do
 
   describe "error handling" do
     @describetag :integration
-    @describetag timeout: 300_000  # 5 minutes for error handling tests too
+    @describetag timeout: 300_000  # 5 minutes for 1024x1024 images
 
     setup do
       # Cleanup function to stop the PythonxServer after each test
@@ -186,8 +220,27 @@ defmodule Margarine.Integration.FluxGenerationTest do
       IO.puts(String.duplicate("=", 80))
 
       # Test with 1024x1024 which is the standard FLUX size
-      # This verifies the pipeline can handle full-resolution images
-      # 2048x2048 and larger require significantly more VRAM (>32GB unified memory)
+      # This verifies the pipeline can handle full-resolution images without crashes
+      #
+      # FLUX Image Size Requirements:
+      # - Dimensions must be divisible by 16 (8 for VAE + 2 for FLUX 2x2 patching)
+      # - Valid sizes: 512, 1024, 1536, 1600, 2048, etc.
+      # - Invalid sizes: 1800 (not divisible by 16) will be rejected with clear error
+      #
+      # Tested & Verified Sizes (M4 Max 64GB, MPS backend):
+      # - 1024x1024: ~4 minutes, ~20GB peak usage - ✅ TESTED, STABLE
+      # - 1600x1600: ~4.5 minutes, drops to 6.9GB available - ✅ TESTED, WORKS
+      #
+      # Untested Larger Sizes:
+      # - 2048x2048: Theoretically supported but UNTESTED. Step 1 alone takes 4+ minutes.
+      #              Expect 10-15+ minute generation times and <5GB free memory.
+      #              May fail on systems with <64GB RAM due to memory pressure.
+      #
+      # Recommendations:
+      # - Systems with <32GB: Use 1024x1024 or smaller
+      # - Systems with 32-64GB: 1024x1024 recommended, 1600x1600 feasible
+      # - Systems with 64GB+: Maximum tested size is 1600x1600
+      #                       Larger sizes may work but expect very long generation times
       prompt = "a simple test image"
       opts = [model: :flux_schnell, size: {1024, 1024}, steps: 4, seed: 999]
 

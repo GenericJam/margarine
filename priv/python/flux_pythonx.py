@@ -18,6 +18,11 @@ Key differences from flux_pipeline.py:
 import warnings
 warnings.filterwarnings('ignore', '.*resource_tracker.*', UserWarning)
 
+# Import memory limiting FIRST to cap memory usage before loading models
+# This prevents OOM crashes on machines with large amounts of RAM
+from memory_limit import set_memory_limit_gb
+set_memory_limit_gb(16)  # Cap Python process at 16GB
+
 import torch
 import numpy as np
 from diffusers import FluxPipeline
@@ -159,6 +164,11 @@ def encode_prompt(prompt, negative_prompt="", guidance_scale=3.5):
     prompt_embeds_np = prompt_embeds_f32.cpu().numpy()
     pooled_embeds_np = pooled_embeds_f32.cpu().numpy()
 
+    # MEMORY LEAK FIX: Free intermediate tensors
+    del prompt_embeds_f32, pooled_embeds_f32, prompt_embeds, pooled_prompt_embeds
+    import gc
+    gc.collect()
+
     # Return as tuples for zero-copy transfer: (data_bytes, shape, dtype)
     # Pythonx will pass binary data by reference, avoiding copies
     return {
@@ -276,6 +286,13 @@ def transformer_forward(
         model_output_np = np.nan_to_num(model_output_np, nan=0.0, posinf=0.0, neginf=0.0)
         print(f"[FluxPythonx] Replaced NaN/Inf with zeros")
 
+    # MEMORY LEAK FIX: Explicitly free intermediate tensors before returning
+    # These can be 200MB+ each and won't be freed until Python GC runs
+    del model_output_f32, model_output_unpacked, model_output
+    del latents, prompt_embeds, pooled_embeds, latents_packed
+    import gc
+    gc.collect()
+
     return (
         model_output_np.data.tobytes(),
         list(model_output_np.shape),
@@ -342,6 +359,12 @@ def vae_decode(latents_np):
     else:
         # Log statistics even when clean
         print(f"[FluxPythonx] vae_decode output: min={image_np.min():.4f}, max={image_np.max():.4f}, mean={image_np.mean():.4f}")
+
+    # MEMORY LEAK FIX: Explicitly free intermediate tensors
+    # VAE decode can use 2-3GB for large images
+    del image_f32, image, latents
+    import gc
+    gc.collect()
 
     return (
         image_np.data.tobytes(),

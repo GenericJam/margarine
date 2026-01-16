@@ -28,12 +28,14 @@ defmodule Margarine do
   using UV. No manual Python setup required!
 
   Supported models:
-  - `:flux_schnell` - Fast 4-step model (default)
-  - `:flux_dev` - High quality 28-step model
+  - `:flux_schnell` - Fast 4-step FLUX model (default)
+  - `:flux_dev` - High quality 28-step FLUX model
+  - `:sdxl_base` - Stable Diffusion XL base model (20 steps)
+  - `:sdxl_turbo` - SDXL Turbo model (1 step, fast)
 
   ## Options
 
-  - `:model` - Model to use (`:flux_schnell` or `:flux_dev`)
+  - `:model` - Model to use (`:flux_schnell`, `:flux_dev`, `:sdxl_base`, or `:sdxl_turbo`)
   - `:steps` - Number of denoising steps (default: model-specific)
   - `:guidance_scale` - Guidance strength (default: model-specific)
   - `:seed` - Random seed for reproducibility (default: random)
@@ -43,14 +45,17 @@ defmodule Margarine do
 
   - FLUX Schnell: ~12GB VRAM (GPU) or ~16GB RAM (CPU)
   - FLUX Dev: ~12GB VRAM (GPU) or ~16GB RAM (CPU)
+  - SDXL Base: ~7GB VRAM (GPU) or ~10GB RAM (CPU)
+  - SDXL Turbo: ~7GB VRAM (GPU) or ~10GB RAM (CPU)
 
   Use `check_environment/0` to verify your Python environment is ready.
   """
 
   alias Margarine.Pipeline
+  alias Margarine.Pipelines.Sdxl
 
   @type generation_opts :: [
-          model: :flux_schnell | :flux_dev,
+          model: :flux_schnell | :flux_dev | :sdxl_base | :sdxl_turbo,
           steps: pos_integer(),
           guidance_scale: float(),
           seed: non_neg_integer() | nil,
@@ -84,9 +89,24 @@ defmodule Margarine do
     # Merge prompt into opts for validation
     full_opts = Keyword.put(opts, :prompt, prompt)
 
-    with {:ok, state} <- Pipeline.prepare(full_opts),
-         {:ok, image} <- Pipeline.generate(state) do
-      {:ok, image}
+    # Route to appropriate pipeline based on model
+    model = Keyword.get(opts, :model, :flux_schnell)
+
+    case model do
+      model when model in [:flux_schnell, :flux_dev] ->
+        with {:ok, state} <- Pipeline.prepare(full_opts),
+             {:ok, image} <- Pipeline.generate(state) do
+          {:ok, image}
+        end
+
+      model when model in [:sdxl_base, :sdxl_turbo] ->
+        with {:ok, state} <- Sdxl.prepare(full_opts),
+             {:ok, image} <- Sdxl.generate(state) do
+          {:ok, image}
+        end
+
+      _ ->
+        {:error, "Unsupported model: #{inspect(model)}. Must be :flux_schnell, :flux_dev, :sdxl_base, or :sdxl_turbo"}
     end
   end
 

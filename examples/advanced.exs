@@ -67,9 +67,9 @@ defmodule MargarineAdvancedExample do
     end
 
     # Check available memory
-    case Margarine.Memory.check_available() do
+    case Margarine.Memory.available_memory() do
       {:ok, info} ->
-        available_gb = Float.round(info.available_bytes / 1_073_741_824, 1)
+        available_gb = Float.round(info.available / 1_073_741_824, 1)
         IO.puts("✓ Available RAM: #{available_gb} GB\n")
 
         if available_gb < 16 do

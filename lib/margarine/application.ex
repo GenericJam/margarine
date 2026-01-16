@@ -90,7 +90,8 @@ defmodule Margarine.Application do
       "accelerate>=0.20.0",
       "safetensors>=0.3.1",
       "protobuf>=3.20.0",
-      "sentencepiece>=0.1.99"
+      "sentencepiece>=0.1.99",
+      "psutil>=5.9.0"
     ]
     """
 
