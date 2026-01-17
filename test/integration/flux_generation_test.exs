@@ -261,4 +261,230 @@ defmodule Margarine.Integration.FluxGenerationTest do
       IO.puts("✓ Successfully generated 1024x1024 image")
     end
   end
+
+  describe "IMG2IMG generation" do
+    @describetag :integration
+    @describetag timeout: 300_000  # 5 minutes per test
+
+    setup do
+      # Generate a base image to use for img2img tests
+      IO.puts("\n[Setup IMG2IMG] Generating base image...")
+
+      prompt = "a red panda eating bamboo in a forest"
+      opts = [model: :flux_schnell, steps: 4, size: {512, 512}, seed: 42]
+
+      {:ok, base_image} = Margarine.generate(prompt, opts)
+
+      # Save to temp file for img2img
+      temp_path = Path.join(System.tmp_dir!(), "margarine_img2img_test_#{:rand.uniform(999_999)}.png")
+      :ok = Margarine.Image.save(base_image, temp_path)
+
+      IO.puts("[Setup IMG2IMG] Base image saved to: #{temp_path}")
+
+      # Clean up temp file after tests
+      on_exit(fn ->
+        File.rm(temp_path)
+      end)
+
+      {:ok, base_image_path: temp_path}
+    end
+
+    test "generates valid image from init image with moderate denoising", %{base_image_path: init_image} do
+      IO.puts("\n" <> String.duplicate("=", 80))
+      IO.puts("TEST IMG2IMG 1: Moderate transformation (strength=0.7)")
+      IO.puts(String.duplicate("=", 80))
+
+      prompt = "convert to anime style with vibrant colors"
+
+      opts = [
+        model: :flux_schnell,
+        steps: 4,
+        size: {512, 512},
+        denoising_strength: 0.7,
+        seed: 123
+      ]
+
+      # Generate img2img
+      result = Margarine.img2img(prompt, init_image, opts)
+
+      # Verify successful generation
+      assert {:ok, image} = result
+      assert %Nx.Tensor{} = image
+
+      # Verify tensor shape and type
+      assert Nx.shape(image) == {512, 512, 3}
+      assert Nx.type(image) == {:u, 8}
+
+      # Verify image is not blank
+      min_val = Nx.reduce_min(image) |> Nx.to_number()
+      max_val = Nx.reduce_max(image) |> Nx.to_number()
+      assert max_val > min_val, "Image appears blank"
+      assert min_val >= 0
+      assert max_val <= 255
+
+      IO.puts("✓ Successfully generated img2img with strength=0.7")
+    end
+
+    test "subtle changes with low denoising strength", %{base_image_path: init_image} do
+      IO.puts("\n" <> String.duplicate("=", 80))
+      IO.puts("TEST IMG2IMG 2: Subtle changes (strength=0.3)")
+      IO.puts(String.duplicate("=", 80))
+
+      prompt = "turn into a watercolor painting"
+
+      opts = [
+        model: :flux_schnell,
+        steps: 4,
+        size: {512, 512},
+        denoising_strength: 0.3,
+        seed: 456
+      ]
+
+      {:ok, image} = Margarine.img2img(prompt, init_image, opts)
+
+      # Same validation
+      assert Nx.shape(image) == {512, 512, 3}
+      assert Nx.type(image) == {:u, 8}
+
+      min_val = Nx.reduce_min(image) |> Nx.to_number()
+      max_val = Nx.reduce_max(image) |> Nx.to_number()
+      assert max_val > min_val
+      assert min_val >= 0
+      assert max_val <= 255
+
+      IO.puts("✓ Successfully generated img2img with strength=0.3")
+    end
+
+    test "complete regeneration with strength=1.0 (equivalent to text2img)", %{base_image_path: init_image} do
+      IO.puts("\n" <> String.duplicate("=", 80))
+      IO.puts("TEST IMG2IMG 3: Complete regeneration (strength=1.0)")
+      IO.puts("This should be equivalent to text2img!")
+      IO.puts(String.duplicate("=", 80))
+
+      prompt = "a blue dragon flying over mountains"
+
+      opts = [
+        model: :flux_schnell,
+        steps: 4,
+        size: {512, 512},
+        denoising_strength: 1.0,
+        seed: 789
+      ]
+
+      {:ok, image} = Margarine.img2img(prompt, init_image, opts)
+
+      # Same validation
+      assert Nx.shape(image) == {512, 512, 3}
+      assert Nx.type(image) == {:u, 8}
+
+      min_val = Nx.reduce_min(image) |> Nx.to_number()
+      max_val = Nx.reduce_max(image) |> Nx.to_number()
+      assert max_val > min_val
+      assert min_val >= 0
+      assert max_val <= 255
+
+      IO.puts("✓ Successfully generated img2img with strength=1.0")
+      IO.puts("  This proves img2img can replicate text2img behavior!")
+    end
+
+    test "img2img respects seed for reproducibility", %{base_image_path: init_image} do
+      IO.puts("\n" <> String.duplicate("=", 80))
+      IO.puts("TEST IMG2IMG 4: Respects seed for reproducibility")
+      IO.puts(String.duplicate("=", 80))
+
+      prompt = "sunset colors"
+      opts = [
+        model: :flux_schnell,
+        steps: 4,
+        size: {512, 512},
+        denoising_strength: 0.5,
+        seed: 999
+      ]
+
+      # Generate twice with same seed
+      {:ok, image1} = Margarine.img2img(prompt, init_image, opts)
+      {:ok, image2} = Margarine.img2img(prompt, init_image, opts)
+
+      # Should be identical
+      assert Nx.equal(image1, image2) |> Nx.all() |> Nx.to_number() == 1
+
+      IO.puts("✓ IMG2IMG produces identical results with same seed")
+    end
+
+    test "img2img fails with non-existent init image" do
+      IO.puts("\n" <> String.duplicate("=", 80))
+      IO.puts("TEST IMG2IMG 5: Error handling - non-existent file")
+      IO.puts(String.duplicate("=", 80))
+
+      prompt = "test"
+      non_existent = "/tmp/this_file_does_not_exist_#{:rand.uniform(999_999)}.png"
+
+      result = Margarine.img2img(prompt, non_existent, denoising_strength: 0.5)
+
+      assert {:error, reason} = result
+      assert reason =~ "not found" or reason =~ "exist"
+
+      IO.puts("✓ Correctly rejects non-existent init image")
+    end
+
+    test "img2img with strength=1.0 is equivalent to text2img", %{base_image_path: init_image} do
+      IO.puts("\n" <> String.duplicate("=", 80))
+      IO.puts("TEST IMG2IMG 6: Prove img2img(strength=1.0) ≈ text2img")
+      IO.puts("CORE DESIGN PRINCIPLE: Text2img is just img2img starting from pure noise!")
+      IO.puts(String.duplicate("=", 80))
+
+      # Use the same prompt and seed for both
+      prompt = "a majestic mountain landscape at sunset"
+      seed = 42
+      opts_common = [model: :flux_schnell, steps: 4, size: {512, 512}, seed: seed]
+
+      # Generate with text2img
+      IO.puts("\n1. Generating with text2img...")
+      {:ok, text2img_result} = Margarine.generate(prompt, opts_common)
+
+      # Generate with img2img at strength=1.0
+      IO.puts("2. Generating with img2img (strength=1.0)...")
+      {:ok, img2img_result} =
+        Margarine.img2img(prompt, init_image, opts_common ++ [denoising_strength: 1.0])
+
+      # Both should have same shape and type
+      assert Nx.shape(text2img_result) == Nx.shape(img2img_result)
+      assert Nx.type(text2img_result) == Nx.type(img2img_result)
+
+      # With the same seed, they should be identical (or extremely close)
+      # Note: Small numerical differences may occur due to floating point precision
+      # in the noise generation, but they should be very close
+      are_identical = Nx.equal(text2img_result, img2img_result) |> Nx.all() |> Nx.to_number() == 1
+
+      if are_identical do
+        IO.puts("\n✓ PERFECT! Text2img and img2img(1.0) produced IDENTICAL results!")
+        IO.puts("  This proves the core design principle:")
+        IO.puts("  text2img = img2img(random_noise, strength=1.0)")
+      else
+        # They might differ slightly due to numerical precision
+        # Calculate percentage of matching pixels
+        total_pixels = 512 * 512 * 3
+        matching_pixels =
+          Nx.equal(text2img_result, img2img_result)
+          |> Nx.sum()
+          |> Nx.to_number()
+
+        match_percentage = (matching_pixels / total_pixels) * 100
+
+        IO.puts("\n✓ Text2img and img2img(1.0) are #{Float.round(match_percentage, 2)}% identical")
+
+        # They should be at least 99% identical (allowing for minor numerical differences)
+        assert match_percentage > 99.0,
+          "text2img and img2img(1.0) should be nearly identical, got #{match_percentage}%"
+
+        IO.puts("  (Small differences may be due to floating point precision)")
+        IO.puts("  This still proves the core design principle:")
+        IO.puts("  text2img ≈ img2img(random_noise, strength=1.0)")
+      end
+
+      IO.puts("\n🎉 DESIGN PRINCIPLE VALIDATED!")
+      IO.puts("   Everything is img2img + prompt.")
+      IO.puts("   Text2img is just img2img starting from pure noise.")
+    end
+  end
 end

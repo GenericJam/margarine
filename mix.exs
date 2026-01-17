@@ -4,24 +4,30 @@ defmodule Margarine.MixProject do
   def project do
     [
       app: :margarine,
-      version: "0.1.1",
+      version: "0.2.0",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test
-      ],
 
       # Hex package metadata
       name: "Margarine",
       source_url: "https://github.com/GenericJam/margarine",
-      description: "AI-powered image generation for Elixir using FLUX and Stable Diffusion",
+      description: "AI-powered text-to-image and image-to-image generation for Elixir using FLUX and SDXL",
       package: package(),
       docs: docs()
+    ]
+  end
+
+  # CLI configuration
+  def cli do
+    [
+      preferred_envs: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test
+      ]
     ]
   end
 
@@ -38,7 +44,9 @@ defmodule Margarine.MixProject do
     [
       # Core dependencies (required)
       {:nx, "~> 0.9"},
-      {:pythonx, "~> 0.2"},
+      # Has uv_init native_tls: true support
+      # {:pythonx, git: "https://github.com/livebook-dev/pythonx.git", ref: "12ece4"},
+      {:pythonx, "~> 0.4.7"},
       {:vix, "~> 0.31"},
       {:telemetry, "~> 1.0"},
       {:jason, "~> 1.4"},
@@ -89,7 +97,8 @@ defmodule Margarine.MixProject do
       extras: [
         "README.md",
         "CHANGELOG.md",
-        "notebooks/getting_started.livemd",
+        "notebooks/flux_getting_started.livemd",
+        "notebooks/sdxl_getting_started.livemd",
         "examples/README.md"
       ],
       groups_for_extras: [

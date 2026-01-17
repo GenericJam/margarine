@@ -266,4 +266,191 @@ defmodule Margarine.ImageTest do
       assert Nx.shape(normalized) == {1, 2, 3}
     end
   end
+
+  describe "resize/3" do
+    test "resizes image to target dimensions" do
+      # Create a 4x4 test image (small for speed)
+      tensor =
+        Nx.broadcast(128, {4, 4, 3})
+        |> Nx.as_type(:u8)
+
+      assert {:ok, resized} = Image.resize(tensor, 8, 8)
+      assert Nx.shape(resized) == {8, 8, 3}
+      assert Nx.type(resized) == {:u, 8}
+    end
+
+    test "handles upscaling" do
+      tensor =
+        Nx.broadcast(200, {2, 2, 3})
+        |> Nx.as_type(:u8)
+
+      assert {:ok, resized} = Image.resize(tensor, 10, 10)
+      assert Nx.shape(resized) == {10, 10, 3}
+    end
+
+    test "handles downscaling" do
+      tensor =
+        Nx.broadcast(150, {20, 20, 3})
+        |> Nx.as_type(:u8)
+
+      assert {:ok, resized} = Image.resize(tensor, 5, 5)
+      assert Nx.shape(resized) == {5, 5, 3}
+    end
+
+    test "preserves RGB channels" do
+      # Create image with distinct colors
+      tensor =
+        Nx.tensor([
+          [[255, 0, 0], [0, 255, 0]],
+          [[0, 0, 255], [255, 255, 255]]
+        ])
+        |> Nx.as_type(:u8)
+
+      assert {:ok, resized} = Image.resize(tensor, 4, 4)
+      {_h, _w, channels} = Nx.shape(resized)
+      assert channels == 3
+    end
+  end
+
+  describe "preprocess_for_vae/2" do
+    test "converts uint8 HWC to float32 BCHW in range [-1, 1]" do
+      # Create small test image (4x4 for speed)
+      tensor =
+        Nx.broadcast(128, {4, 4, 3})
+        |> Nx.as_type(:u8)
+
+      target_size = {4, 4}
+
+      assert {:ok, preprocessed} = Image.preprocess_for_vae(tensor, target_size)
+
+      # Check shape: should be BCHW format
+      assert Nx.shape(preprocessed) == {1, 3, 4, 4}
+      # Check type
+      assert Nx.type(preprocessed) == {:f, 32}
+
+      # Check value range: uint8 128 -> [-1, 1] range should be close to 0
+      # Formula: (128 / 255.0) * 2.0 - 1.0 = 0.003921...
+      values = Nx.to_flat_list(preprocessed)
+      assert Enum.all?(values, fn v -> v >= -1.0 and v <= 1.0 end)
+
+      # Value should be close to 0 for input of 128
+      [first | _] = values
+      assert_in_delta first, 0.0, 0.01
+    end
+
+    test "correctly maps uint8 values to [-1, 1] range" do
+      # Test edge values: 0 -> -1.0, 255 -> 1.0, 128 -> ~0.0
+      tensor =
+        Nx.tensor([
+          [[0, 0, 0], [128, 128, 128]],
+          [[255, 255, 255], [64, 192, 128]]
+        ])
+        |> Nx.as_type(:u8)
+
+      assert {:ok, preprocessed} = Image.preprocess_for_vae(tensor, {2, 2})
+
+      # Convert to list for easier inspection
+      # Shape is {1, 3, 2, 2} - let's check channel 0
+      channel_0 = preprocessed[0][0] |> Nx.to_flat_list()
+
+      # First pixel (0,0): value 0 -> should be close to -1.0
+      assert_in_delta Enum.at(channel_0, 0), -1.0, 0.01
+
+      # Fourth pixel (1,1): value 64 -> should be close to -0.498
+      # (64 / 255.0) * 2.0 - 1.0 = -0.498
+      assert_in_delta Enum.at(channel_0, 3), -0.498, 0.01
+    end
+
+    test "resizes image to target dimensions" do
+      # Create 8x8 image, resize to 4x4
+      tensor =
+        Nx.broadcast(100, {8, 8, 3})
+        |> Nx.as_type(:u8)
+
+      assert {:ok, preprocessed} = Image.preprocess_for_vae(tensor, {4, 4})
+
+      # Should be resized to target
+      assert Nx.shape(preprocessed) == {1, 3, 4, 4}
+    end
+
+    test "handles images that don't need resizing" do
+      # Create image already at target size
+      tensor =
+        Nx.broadcast(150, {10, 10, 3})
+        |> Nx.as_type(:u8)
+
+      assert {:ok, preprocessed} = Image.preprocess_for_vae(tensor, {10, 10})
+
+      # Should be same size, just preprocessed
+      assert Nx.shape(preprocessed) == {1, 3, 10, 10}
+      assert Nx.type(preprocessed) == {:f, 32}
+    end
+
+    test "converts HWC to BCHW format correctly" do
+      # Create image with known RGB values
+      # Red pixel at (0,0), green at (0,1), blue at (1,0), white at (1,1)
+      tensor =
+        Nx.tensor([
+          [[255, 0, 0], [0, 255, 0]],
+          [[0, 0, 255], [255, 255, 255]]
+        ])
+        |> Nx.as_type(:u8)
+
+      assert {:ok, preprocessed} = Image.preprocess_for_vae(tensor, {2, 2})
+
+      # Shape should be {1, 3, 2, 2} = batch, channels, height, width
+      assert Nx.shape(preprocessed) == {1, 3, 2, 2}
+
+      # Check that red channel (index 0) has high value at (0,0)
+      red_channel = preprocessed[0][0]
+      # 255 -> 1.0
+      assert_in_delta red_channel[0][0] |> Nx.to_number(), 1.0, 0.01
+
+      # Check that green channel (index 1) has high value at (0,1)
+      green_channel = preprocessed[0][1]
+      assert_in_delta green_channel[0][1] |> Nx.to_number(), 1.0, 0.01
+
+      # Check that blue channel (index 2) has high value at (1,0)
+      blue_channel = preprocessed[0][2]
+      assert_in_delta blue_channel[1][0] |> Nx.to_number(), 1.0, 0.01
+    end
+
+    test "rejects invalid tensor" do
+      # Try with wrong type (float instead of uint8)
+      tensor =
+        Nx.tensor([[[0.5, 0.5, 0.5]]])
+        |> Nx.as_type(:f32)
+
+      assert {:error, reason} = Image.preprocess_for_vae(tensor, {10, 10})
+      assert reason =~ "type"
+    end
+
+    test "rejects invalid target dimensions" do
+      tensor =
+        Nx.broadcast(100, {10, 10, 3})
+        |> Nx.as_type(:u8)
+
+      # Negative dimensions should fail in guards
+      assert_raise FunctionClauseError, fn ->
+        Image.preprocess_for_vae(tensor, {-1, 10})
+      end
+
+      assert_raise FunctionClauseError, fn ->
+        Image.preprocess_for_vae(tensor, {10, 0})
+      end
+    end
+
+    test "handles 4D batched input by normalizing to 3D first" do
+      # Create batched image {1, H, W, 3}
+      tensor =
+        Nx.tensor([[[[200, 100, 50]]]])
+        |> Nx.as_type(:u8)
+
+      assert {:ok, preprocessed} = Image.preprocess_for_vae(tensor, {1, 1})
+
+      # Should still produce correct output shape
+      assert Nx.shape(preprocessed) == {1, 3, 1, 1}
+      assert Nx.type(preprocessed) == {:f, 32}
+    end
+  end
 end

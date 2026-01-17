@@ -144,6 +144,56 @@ defmodule Margarine.Schedulers.FluxEuler do
     Nx.subtract(sample, Nx.multiply(dt, model_output))
   end
 
+  @doc """
+  Add noise to latents for img2img.
+
+  For FLUX's rectified flow, noising is linear interpolation:
+  `x_t = (1 - t) * x_0 + t * noise`
+
+  Where:
+  - `x_0` is the clean latent (encoded from init image)
+  - `noise` is random Gaussian noise
+  - `t` is the timestep (0.0 = clean, 1.0 = pure noise)
+  - `x_t` is the noisy latent
+
+  ## Parameters
+
+    * `latents` - Clean latents from VAE encoder
+    * `noise` - Random noise (same shape as latents)
+    * `timestep` - Noise level (0.0 to 1.0)
+
+  ## Returns
+
+    Noisy latents ready for denoising
+
+  ## Examples
+
+      # For img2img with strength=0.7, start at timestep 0.7
+      noisy_latents = FluxEuler.add_noise(clean_latents, noise, 0.7)
+      # Result is 30% clean image, 70% noise
+
+  """
+  @spec add_noise(Nx.Tensor.t(), Nx.Tensor.t(), float()) :: Nx.Tensor.t()
+  def add_noise(latents, noise, timestep) when is_float(timestep) do
+    add_noise_impl(latents, noise, timestep)
+  end
+
+  # Nx.defn for JIT compilation
+  defnp add_noise_impl(latents, noise, timestep) do
+    # Rectified flow: x_t = (1 - t) * x_0 + t * noise
+    # This is linear interpolation between clean latents and noise
+    t = Nx.as_type(timestep, {:f, 32})
+    one_minus_t = Nx.subtract(1.0, t)
+
+    # (1 - t) * latents
+    scaled_latents = Nx.multiply(one_minus_t, latents)
+    # t * noise
+    scaled_noise = Nx.multiply(t, noise)
+
+    # x_t = (1 - t) * latents + t * noise
+    Nx.add(scaled_latents, scaled_noise)
+  end
+
   # Helper for applying timestep shift
   defnp apply_shift(timesteps, shift) do
     # Shift formula: timestep_shifted = shift * timestep / (1 + (shift - 1) * timestep)

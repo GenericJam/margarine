@@ -1,6 +1,6 @@
-defmodule Margarine.Python.PythonxServer do
+defmodule Margarine.Python.SdxlPythonxServer do
   @moduledoc """
-  GenServer managing FLUX model inference via Pythonx (zero-copy shared memory).
+  GenServer managing SDXL model inference via Pythonx (zero-copy shared memory).
 
   Uses Pythonx to share memory directly between Nx (Elixir) and NumPy (Python)
   without JSON serialization. Provides ~200x speedup for tensor transfers.
@@ -16,8 +16,10 @@ defmodule Margarine.Python.PythonxServer do
 
   - `initialize_model(model, device, dtype)`
   - `encode_prompt(prompt, negative_prompt, guidance_scale)`
-  - `transformer_forward(latents, timestep, prompt_embeds, pooled_embeds, guidance)`
+  - `get_time_ids(height, width, original_height, original_width)`
+  - `unet_forward(latents, timestep, prompt_embeds, pooled_embeds, time_ids, guidance)`
   - `vae_decode(latents)`
+  - `vae_encode(image)`
   - `generate_latents(height, width, seed)`
   """
 
@@ -43,15 +45,21 @@ defmodule Margarine.Python.PythonxServer do
 
   def encode_prompt(server, prompt, opts \\ []) do
     negative = Keyword.get(opts, :negative_prompt, "")
-    guidance = Keyword.get(opts, :guidance_scale, 3.5)
+    guidance = Keyword.get(opts, :guidance_scale, 7.5)
     GenServer.call(server, {:encode_prompt, prompt, negative, guidance}, @call_timeout)
   end
 
-  def transformer_forward(server, latents, timestep, prompt_embeds, pooled_embeds, opts \\ []) do
-    guidance = Keyword.get(opts, :guidance_scale, 3.5)
+  def get_time_ids(server, height, width, guidance_scale \\ 7.5, opts \\ []) do
+    original_height = Keyword.get(opts, :original_height)
+    original_width = Keyword.get(opts, :original_width)
+    GenServer.call(server, {:get_time_ids, height, width, original_height, original_width, guidance_scale}, @call_timeout)
+  end
+
+  def unet_forward(server, latents, timestep, prompt_embeds, pooled_embeds, time_ids, opts \\ []) do
+    guidance = Keyword.get(opts, :guidance_scale, 7.5)
     GenServer.call(
       server,
-      {:transformer_forward, latents, timestep, prompt_embeds, pooled_embeds, guidance},
+      {:unet_forward, latents, timestep, prompt_embeds, pooled_embeds, time_ids, guidance},
       @call_timeout
     )
   end
@@ -78,9 +86,9 @@ defmodule Margarine.Python.PythonxServer do
   def init(opts) do
     model = Keyword.fetch!(opts, :model)
     device = Keyword.get(opts, :device, detect_device())
-    dtype = Keyword.get(opts, :dtype, "bfloat16")
+    dtype = Keyword.get(opts, :dtype, "float16")
 
-    Logger.info("[Margarine.PythonxServer] Starting server for #{model}...")
+    Logger.info("[Margarine.SdxlPythonxServer] Starting server for #{model}...")
 
     model_config = Margarine.Config.get_generation_defaults(model)
 
@@ -100,23 +108,24 @@ defmodule Margarine.Python.PythonxServer do
   @impl true
   def handle_continue(:load_model, state) do
     # Check memory availability before loading model
-    required_mb = Margarine.Memory.estimate_flux_memory(state.model)
+    # SDXL requires ~7GB VRAM (less than FLUX's ~14GB)
+    required_mb = estimate_sdxl_memory(state.model)
 
     case Margarine.Memory.available_memory() do
       {:ok, info} ->
         available_mb = Margarine.Memory.bytes_to_mb(info.available)
 
         Logger.info(
-          "[Margarine.PythonxServer] Memory check for #{state.model}: " <>
+          "[Margarine.SdxlPythonxServer] Memory check for #{state.model}: " <>
             "Required ~#{required_mb}MB, Available #{available_mb}MB " <>
             "(#{Margarine.Memory.format_bytes(info.available)} of #{Margarine.Memory.format_bytes(info.total)})"
         )
 
         if available_mb >= required_mb do
-          Logger.info("[Margarine.PythonxServer] ✓ Sufficient memory available")
+          Logger.info("[Margarine.SdxlPythonxServer] ✓ Sufficient memory available")
         else
           Logger.error(
-            "[Margarine.PythonxServer] ✗ Insufficient memory: " <>
+            "[Margarine.SdxlPythonxServer] ✗ Insufficient memory: " <>
               "Need #{required_mb}MB but only #{available_mb}MB available. " <>
               "Close other applications or use a smaller model."
           )
@@ -126,18 +135,14 @@ defmodule Margarine.Python.PythonxServer do
 
       {:error, reason} ->
         Logger.warning(
-          "[Margarine.PythonxServer] Could not check memory availability: #{reason}. " <>
+          "[Margarine.SdxlPythonxServer] Could not check memory availability: #{reason}. " <>
             "Proceeding with model load..."
         )
     end
 
     model_type = Atom.to_string(state.model)
     # Map Margarine model atoms to HuggingFace model IDs
-    model_id = case state.model do
-      :flux_schnell -> "black-forest-labs/FLUX.1-schnell"
-      :flux_dev -> "black-forest-labs/FLUX.1-dev"
-      _ -> raise "Unsupported model: #{state.model}"
-    end
+    model_id = Margarine.Config.get_model_id(state.model)
 
     device = state.device
     dtype = state.dtype
@@ -152,7 +157,7 @@ defmodule Margarine.Python.PythonxServer do
 import sys
 import os
 sys.path.insert(0, '#{python_dir}')
-import flux_pythonx
+import sdxl_pythonx
 
 # Initialize model (expensive - do once)
 model_type_str = model_type.decode('utf-8') if isinstance(model_type, bytes) else str(model_type)
@@ -167,7 +172,7 @@ if hf_token_raw:
 else:
     hf_token = None
 
-init_result = flux_pythonx.initialize_model(
+init_result = sdxl_pythonx.initialize_model(
     model_type_str,
     model_id_str,
     device_str,
@@ -186,18 +191,18 @@ initialized = True
       "token" => hf_token
     }
 
-    Logger.info("[Margarine.PythonxServer] Loading FLUX model #{model_id} on #{device}...")
-    if hf_token != "", do: Logger.info("[Margarine.PythonxServer] Using HuggingFace token")
-    Logger.info("[Margarine.PythonxServer] This will download ~30GB on first run and take 2-5 minutes...")
-    Logger.info("[Margarine.PythonxServer] Model loading in background - server ready for requests...")
+    Logger.info("[Margarine.SdxlPythonxServer] Loading SDXL model #{model_id} on #{device}...")
+    if hf_token != "", do: Logger.info("[Margarine.SdxlPythonxServer] Using HuggingFace token")
+    Logger.info("[Margarine.SdxlPythonxServer] This will download ~7GB on first run and take 2-5 minutes...")
+    Logger.info("[Margarine.SdxlPythonxServer] Model loading in background - server ready for requests...")
 
     case Pythonx.eval(init_code, init_globals) do
       {:error, reason} ->
-        Logger.error("[Margarine.PythonxServer] Failed to initialize: #{inspect(reason)}")
+        Logger.error("[Margarine.SdxlPythonxServer] Failed to initialize: #{inspect(reason)}")
         {:stop, reason, state}
 
       {_result, new_globals} ->
-        Logger.info("[Margarine.PythonxServer] ✓ FLUX model loaded successfully")
+        Logger.info("[Margarine.SdxlPythonxServer] ✓ SDXL model loaded successfully")
         new_state = %{state | globals: new_globals, loading: false}
         {:noreply, new_state}
     end
@@ -221,7 +226,7 @@ initialized = True
 prompt_str = prompt.decode('utf-8') if isinstance(prompt, bytes) else str(prompt)
 negative_str = negative.decode('utf-8') if isinstance(negative, bytes) else str(negative)
 
-result = flux_pythonx.encode_prompt(
+result = sdxl_pythonx.encode_prompt(
     prompt_str,
     negative_str,
     float(guidance)
@@ -239,7 +244,7 @@ result
 
     case Pythonx.eval(code, call_globals) do
       {:error, reason} ->
-        Logger.error("[Margarine.PythonxServer] encode_prompt failed: #{inspect(reason)}")
+        Logger.error("[Margarine.SdxlPythonxServer] encode_prompt failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
       {result, _new_globals} ->
@@ -250,37 +255,78 @@ result
   end
 
   @impl true
-  def handle_call({:transformer_forward, latents, timestep, prompt_embeds, pooled_embeds, guidance}, _from, state) do
+  def handle_call({:get_time_ids, height, width, original_height, original_width, guidance_scale}, _from, state) do
+    code = """
+result = sdxl_pythonx.get_time_ids(
+    int(height),
+    int(width),
+    int(original_height) if original_height is not None else None,
+    int(original_width) if original_width is not None else None,
+    float(guidance_scale)
+)
+result
+"""
+
+    call_globals = build_call_globals(state.globals, %{
+      "height" => height,
+      "width" => width,
+      "original_height" => original_height,
+      "original_width" => original_width,
+      "guidance_scale" => guidance_scale
+    })
+
+    case Pythonx.eval(code, call_globals) do
+      {:error, reason} ->
+        Logger.error("[Margarine.SdxlPythonxServer] get_time_ids failed: #{inspect(reason)}")
+        {:reply, {:error, reason}, state}
+
+      {result, _new_globals} ->
+        decoded = decode_pythonx_result(result)
+        {:reply, {:ok, decoded}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:unet_forward, latents, timestep, prompt_embeds, pooled_embeds, time_ids, guidance}, _from, state) do
     # Convert Nx tensors to binary data
     latents_bin = Nx.to_binary(latents)
     prompt_embeds_bin = Nx.to_binary(prompt_embeds)
     pooled_embeds_bin = Nx.to_binary(pooled_embeds)
+    time_ids_bin = Nx.to_binary(time_ids)
 
     latents_shape = Nx.shape(latents) |> Tuple.to_list()
     prompt_shape = Nx.shape(prompt_embeds) |> Tuple.to_list()
     pooled_shape = Nx.shape(pooled_embeds) |> Tuple.to_list()
+    time_ids_shape = Nx.shape(time_ids) |> Tuple.to_list()
+
+    # Get numpy dtypes from Nx types
+    latents_dtype = nx_type_to_numpy_dtype(Nx.type(latents))
+    prompt_dtype = nx_type_to_numpy_dtype(Nx.type(prompt_embeds))
+    pooled_dtype = nx_type_to_numpy_dtype(Nx.type(pooled_embeds))
+    time_ids_dtype = nx_type_to_numpy_dtype(Nx.type(time_ids))
 
     code = """
 import numpy as np
 
-# Reconstruct numpy arrays from binary data
-latents_np = np.frombuffer(latents_bin, dtype=np.float32).reshape(latents_shape)
-prompt_embeds_np = np.frombuffer(prompt_embeds_bin, dtype=np.float32).reshape(prompt_shape)
-pooled_embeds_np = np.frombuffer(pooled_embeds_bin, dtype=np.float32).reshape(pooled_shape)
+# Reconstruct numpy arrays from binary data (add .copy() to make writable)
+latents_np = np.frombuffer(latents_bin, dtype=np.#{latents_dtype}).reshape(latents_shape).copy()
+prompt_embeds_np = np.frombuffer(prompt_embeds_bin, dtype=np.#{prompt_dtype}).reshape(prompt_shape).copy()
+pooled_embeds_np = np.frombuffer(pooled_embeds_bin, dtype=np.#{pooled_dtype}).reshape(pooled_shape).copy()
+time_ids_np = np.frombuffer(time_ids_bin, dtype=np.#{time_ids_dtype}).reshape(time_ids_shape).copy()
 
-# Call transformer forward
-result = flux_pythonx.transformer_forward(
+# Call UNet forward
+result = sdxl_pythonx.unet_forward(
     latents_np,
     float(timestep),
     prompt_embeds_np,
     pooled_embeds_np,
+    time_ids_np,
     float(guidance)
 )
 result
 """
 
     # MEMORY LEAK FIX: Use fresh globals dict with only essential modules + call data
-    # This can be 200MB+ per call, so we must not accumulate!
     call_globals = build_call_globals(state.globals, %{
       "latents_bin" => latents_bin,
       "latents_shape" => latents_shape,
@@ -288,13 +334,15 @@ result
       "prompt_shape" => prompt_shape,
       "pooled_embeds_bin" => pooled_embeds_bin,
       "pooled_shape" => pooled_shape,
+      "time_ids_bin" => time_ids_bin,
+      "time_ids_shape" => time_ids_shape,
       "timestep" => timestep,
       "guidance" => guidance
     })
 
     case Pythonx.eval(code, call_globals) do
       {:error, reason} ->
-        Logger.error("[Margarine.PythonxServer] transformer_forward failed: #{inspect(reason)}")
+        Logger.error("[Margarine.SdxlPythonxServer] unet_forward failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
       {result, _new_globals} ->
@@ -308,12 +356,13 @@ result
   def handle_call({:vae_decode, latents}, _from, state) do
     latents_bin = Nx.to_binary(latents)
     latents_shape = Nx.shape(latents) |> Tuple.to_list()
+    latents_dtype = nx_type_to_numpy_dtype(Nx.type(latents))
 
     code = """
 import numpy as np
 
-latents_np = np.frombuffer(latents_bin, dtype=np.float32).reshape(latents_shape)
-result = flux_pythonx.vae_decode(latents_np)
+latents_np = np.frombuffer(latents_bin, dtype=np.#{latents_dtype}).reshape(latents_shape).copy()
+result = sdxl_pythonx.vae_decode(latents_np)
 result
 """
 
@@ -325,7 +374,7 @@ result
 
     case Pythonx.eval(code, call_globals) do
       {:error, reason} ->
-        Logger.error("[Margarine.PythonxServer] vae_decode failed: #{inspect(reason)}")
+        Logger.error("[Margarine.SdxlPythonxServer] vae_decode failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
       {result, _new_globals} ->
@@ -339,12 +388,13 @@ result
   def handle_call({:vae_encode, image}, _from, state) do
     image_bin = Nx.to_binary(image)
     image_shape = Nx.shape(image) |> Tuple.to_list()
+    image_dtype = nx_type_to_numpy_dtype(Nx.type(image))
 
     code = """
 import numpy as np
 
-image_np = np.frombuffer(image_bin, dtype=np.float32).reshape(image_shape)
-result = flux_pythonx.vae_encode(image_np)
+image_np = np.frombuffer(image_bin, dtype=np.#{image_dtype}).reshape(image_shape).copy()
+result = sdxl_pythonx.vae_encode(image_np)
 result
 """
 
@@ -356,7 +406,7 @@ result
 
     case Pythonx.eval(code, call_globals) do
       {:error, reason} ->
-        Logger.error("[Margarine.PythonxServer] vae_encode failed: #{inspect(reason)}")
+        Logger.error("[Margarine.SdxlPythonxServer] vae_encode failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
       {result, _new_globals} ->
@@ -369,7 +419,7 @@ result
   @impl true
   def handle_call({:generate_latents, height, width, seed}, _from, state) do
     code = """
-result = flux_pythonx.generate_latents(height, width, seed)
+result = sdxl_pythonx.generate_latents(height, width, seed)
 result
 """
 
@@ -382,7 +432,7 @@ result
 
     case Pythonx.eval(code, call_globals) do
       {:error, reason} ->
-        Logger.error("[Margarine.PythonxServer] generate_latents failed: #{inspect(reason)}")
+        Logger.error("[Margarine.SdxlPythonxServer] generate_latents failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
       {result, _new_globals} ->
@@ -395,13 +445,13 @@ result
   @impl true
   def handle_call(:get_model_info, _from, state) do
     code = """
-result = flux_pythonx.get_model_info()
+result = sdxl_pythonx.get_model_info()
 result
 """
 
     case Pythonx.eval(code, state.globals) do
       {:error, reason} ->
-        Logger.error("[Margarine.PythonxServer] get_model_info failed: #{inspect(reason)}")
+        Logger.error("[Margarine.SdxlPythonxServer] get_model_info failed: #{inspect(reason)}")
         {:reply, {:error, reason}, state}
 
       {result, _new_globals} ->
@@ -413,28 +463,25 @@ result
 
   @impl true
   def terminate(reason, state) do
-    Logger.info("[Margarine.PythonxServer] Shutting down (reason: #{inspect(reason)})")
+    Logger.info("[Margarine.SdxlPythonxServer] Shutting down (reason: #{inspect(reason)})")
 
     # Only attempt cleanup if we successfully loaded models
     if state.globals != nil and not state.loading do
-      Logger.info("[Margarine.PythonxServer] Cleaning up Python resources...")
+      Logger.info("[Margarine.SdxlPythonxServer] Cleaning up Python resources...")
 
       cleanup_code = """
 try:
-    # Call clear_memory to free model resources
-    flux_pythonx.clear_memory()
-
     # Force garbage collection
     import gc
     gc.collect()
 
     # Explicitly delete global references
-    if '_models' in dir(flux_pythonx):
-        flux_pythonx._models = None
+    if '_models' in dir(sdxl_pythonx):
+        sdxl_pythonx._models = None
 
     cleanup_success = True
 except Exception as e:
-    print(f"[FluxPythonx] Cleanup error: {e}")
+    print(f"[SdxlPythonx] Cleanup error: {e}")
     cleanup_success = False
 
 cleanup_success
@@ -443,13 +490,13 @@ cleanup_success
       case Pythonx.eval(cleanup_code, state.globals) do
         {result, _} when is_struct(result, Pythonx.Object) ->
           # Python True/False are wrapped in Pythonx.Object
-          Logger.info("[Margarine.PythonxServer] ✓ Python resources cleaned up")
+          Logger.info("[Margarine.SdxlPythonxServer] ✓ Python resources cleaned up")
 
         {:error, error} ->
-          Logger.warning("[Margarine.PythonxServer] Failed to cleanup Python resources: #{inspect(error)}")
+          Logger.warning("[Margarine.SdxlPythonxServer] Failed to cleanup Python resources: #{inspect(error)}")
 
         other ->
-          Logger.debug("[Margarine.PythonxServer] Cleanup result: #{inspect(other)}")
+          Logger.debug("[Margarine.SdxlPythonxServer] Cleanup result: #{inspect(other)}")
       end
     end
 
@@ -458,12 +505,21 @@ cleanup_success
 
   # Private Helpers
 
+  # Estimate SDXL memory requirements
+  defp estimate_sdxl_memory(model) do
+    case model do
+      :sdxl_base -> 7000   # ~7GB for SDXL Base
+      :sdxl_turbo -> 7000  # ~7GB for SDXL Turbo
+      _ -> 7000
+    end
+  end
+
   # MEMORY LEAK FIX: Build fresh globals dict with only essential modules
   # This prevents accumulation of large binary data across calls
   defp build_call_globals(base_globals, call_data) do
     # Only keep essential module references from base_globals
     # Discard any accumulated data from previous calls
-    essential_keys = ["flux_pythonx", "initialized", "init_result"]
+    essential_keys = ["sdxl_pythonx", "initialized", "init_result"]
 
     essential_globals =
       base_globals
@@ -485,6 +541,7 @@ cleanup_success
         nx_type = case dtype_str do
           "float32" -> {:f, 32}
           "float64" -> {:f, 64}
+          "float16" -> {:f, 16}
           "int32" -> {:s, 32}
           "uint8" -> {:u, 8}
           _ -> {:f, 32}
@@ -492,7 +549,7 @@ cleanup_success
         Nx.from_binary(data, nx_type) |> Nx.reshape(List.to_tuple(shape))
 
       # Dict/map (like encode_prompt returning multiple arrays)
-      map when is_map(map) ->
+      map when is_map(map) and not is_struct(map) ->
         Map.new(map, fn {k, v} ->
           key = if is_binary(k), do: String.to_atom(k), else: k
           {key, convert_numpy_arrays(v)}
@@ -501,6 +558,11 @@ cleanup_success
       # List (could be nested results)
       list when is_list(list) ->
         Enum.map(list, &convert_numpy_arrays/1)
+
+      # Pythonx.Object - try to decode it non-recursively
+      %Pythonx.Object{} = obj ->
+        # Decode once and return as-is (don't recurse to avoid infinite loops)
+        Pythonx.decode(obj)
 
       # Otherwise return as-is
       other ->
@@ -513,6 +575,18 @@ cleanup_success
       System.get_env("CUDA_VISIBLE_DEVICES") -> "cuda"
       :os.type() == {:unix, :darwin} -> "mps"
       true -> "cpu"
+    end
+  end
+
+  # Convert Nx type to numpy dtype string
+  defp nx_type_to_numpy_dtype(nx_type) do
+    case nx_type do
+      {:f, 16} -> "float16"
+      {:f, 32} -> "float32"
+      {:f, 64} -> "float64"
+      {:s, 32} -> "int32"
+      {:u, 8} -> "uint8"
+      _ -> "float32"  # Default fallback
     end
   end
 end

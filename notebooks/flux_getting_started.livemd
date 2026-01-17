@@ -1,27 +1,13 @@
-# Getting Started with Margarine
-
-<!-- livebook:{"break_markdown":true} -->
-
-### Dependencies Setup
-
-Margarine requires an Nx backend for GPU/CPU acceleration. Choose based on your hardware:
-
 ```elixir
 Mix.install([
-  {:margarine, "~> 0.1.0"},
+  {:margarine, "~> 0.2.0"},
   {:emlx, "~> 0.1"},  # For Apple Silicon (M1/M2/M3/M4 Macs)
   # {:exla, "~> 0.9"},  # For NVIDIA/AMD GPU or CPU (uncomment if not on Apple Silicon)
   {:kino, "~> 0.14"}
 ])
 ```
 
-**Note:** Uncomment the appropriate backend for your system:
-- **Apple Silicon Macs**: Use `{:emlx, "~> 0.1"}` (already active above)
-- **NVIDIA/AMD GPU or CPU**: Comment out emlx and uncomment `{:exla, "~> 0.9"}`
-
-<!-- livebook:{"break_markdown":true} -->
-
-### Configure Nx Backend
+# Getting Started with Margarine
 
 ```elixir
 # Configure the Nx backend to match your chosen dependency above
@@ -29,7 +15,14 @@ Nx.global_default_backend(EMLX.Backend)
 # For EXLA, use: Nx.global_default_backend(EXLA.Backend)
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+## Setup Notes
+
+**Backend Selection:** Uncomment the appropriate backend for your system:
+
+* **Apple Silicon Macs**: Use `{:emlx, "~> 0.1"}` (already active above)
+* **NVIDIA/AMD GPU or CPU**: Comment out emlx and uncomment `{:exla, "~> 0.9"}`
+
+Margarine requires an Nx backend for GPU/CPU acceleration. The first code block installs all dependencies, and the second configures the backend.
 
 ## Welcome to Margarine! 🧈
 

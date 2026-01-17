@@ -88,7 +88,10 @@ defmodule Margarine.Pipeline do
           scheduler: nil,
           latents: nil,
           prompt_embeds: nil,
-          pooled_embeds: nil
+          pooled_embeds: nil,
+          # IMG2IMG parameters
+          init_image: Keyword.get(opts, :init_image),
+          denoising_strength: Keyword.get(opts, :denoising_strength, 0.75)
         }
 
         {:ok, state}
@@ -103,29 +106,48 @@ defmodule Margarine.Pipeline do
 
   Takes a prepared pipeline state and generates an image.
 
+  Handles both text2img and img2img - the only difference is how initial latents are prepared!
+
   ## Steps:
   1. Start/get PythonxServer GenServer
   2. Encode text prompt to embeddings
   3. Initialize scheduler with timesteps
-  4. Generate initial latents (noise)
-  5. Denoising loop (transformer forward passes)
+  4. Generate initial latents:
+     - **text2img**: Random noise
+     - **img2img**: Encoded image + noise based on denoising_strength
+  5. Denoising loop (transformer forward passes) - SAME FOR BOTH!
   6. Decode latents to image
 
   Returns `{:ok, image_tensor}` where image is {H, W, 3} uint8 RGB tensor.
   """
   @spec generate(pipeline_state()) :: {:ok, Nx.Tensor.t()} | {:error, String.t()}
   def generate(state) do
-    Logger.info("[Margarine.Pipeline] Starting generation: #{state.prompt}")
+    mode = if state.init_image, do: "img2img", else: "text2img"
+    Logger.info("[Margarine.Pipeline] Starting #{mode} generation: #{state.prompt}")
     Logger.info("[Margarine.Pipeline] Model: #{state.model}, Steps: #{state.steps}, Size: #{inspect(state.size)}")
 
     with {:ok, server} <- get_or_start_server(state.model),
          {:ok, embeds} <- encode_prompt(server, state),
          {:ok, scheduler} <- initialize_scheduler(state),
-         {:ok, latents} <- generate_initial_latents(server, state),
+         {:ok, latents} <- prepare_latents(server, scheduler, state),
          {:ok, denoised} <- denoising_loop(server, state, scheduler, latents, embeds),
          {:ok, image} <- decode_to_image(server, denoised) do
       Logger.info("[Margarine.Pipeline] ✓ Generation complete")
       {:ok, image}
+    end
+  end
+
+  # Prepare initial latents - the ONLY difference between text2img and img2img!
+  defp prepare_latents(server, _scheduler, %{init_image: nil} = state) do
+    # text2img: Just random noise
+    generate_initial_latents(server, state)
+  end
+
+  defp prepare_latents(server, _scheduler, %{init_image: init_image, denoising_strength: strength} = state) do
+    # img2img: Encoded image + noise
+    case prepare_image_latents(server, init_image, strength, state) do
+      {:ok, latents, _timestep} -> {:ok, latents}
+      error -> error
     end
   end
 
@@ -189,6 +211,34 @@ defmodule Margarine.Pipeline do
 
       {:error, reason} ->
         {:error, "Latent generation failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp prepare_image_latents(server, init_image_path, denoising_strength, state) do
+    Logger.info("[Margarine.Pipeline] Preparing latents from init image...")
+    Logger.info("[Margarine.Pipeline] Init image: #{init_image_path}")
+    Logger.info("[Margarine.Pipeline] Denoising strength: #{denoising_strength}")
+
+    {height, width} = state.size
+
+    with {:ok, image} <- Margarine.Image.load(init_image_path),
+         {:ok, preprocessed} <- Margarine.Image.preprocess_for_vae(image, {height, width}),
+         {:ok, clean_latents} <- PythonxServer.vae_encode(server, preprocessed),
+         {:ok, noise} <- PythonxServer.generate_latents(server, height, width, state.seed) do
+      # Calculate starting timestep based on denoising strength
+      # strength=1.0 means start at t=1.0 (full noise, equivalent to text2img)
+      # strength=0.0 means start at t=0.0 (no noise, no change)
+      # strength=0.7 means start at t=0.7 (70% noise)
+      timestep = denoising_strength
+
+      # Add noise to latents
+      noisy_latents = FluxEuler.add_noise(clean_latents, noise, timestep)
+
+      Logger.info("[Margarine.Pipeline] ✓ Image latents prepared (starting at t=#{timestep})")
+      {:ok, noisy_latents, timestep}
+    else
+      {:error, reason} ->
+        {:error, "Image latent preparation failed: #{inspect(reason)}"}
     end
   end
 
