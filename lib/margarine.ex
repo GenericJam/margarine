@@ -115,6 +115,100 @@ defmodule Margarine do
   end
 
   @doc """
+  Generate an image from a text prompt and an initial image (img2img).
+
+  Takes an existing image and modifies it according to the prompt. The `denoising_strength`
+  parameter controls how much the image changes:
+  - `1.0` = completely regenerate (equivalent to text2img)
+  - `0.7` = moderate changes (70% noise)
+  - `0.3` = subtle changes (30% noise)
+  - `0.0` = no changes (identity operation)
+
+  ## Parameters
+
+    * `prompt` - Text description of desired changes
+    * `init_image` - Path to initial image file (PNG/JPEG)
+    * `opts` - Generation options (same as `generate/2` plus:)
+      * `:denoising_strength` - How much to change (0.0-1.0, default: 0.75)
+
+  ## Returns
+
+    * `{:ok, image}` - Modified image as Nx tensor
+    * `{:error, reason}` - Generation failed
+
+  ## Examples
+
+      # Subtle style change
+      {:ok, image} = Margarine.img2img(
+        "turn into a watercolor painting",
+        "photo.png",
+        denoising_strength: 0.3
+      )
+
+      # Moderate transformation
+      {:ok, image} = Margarine.img2img(
+        "convert to anime style",
+        "portrait.jpg",
+        denoising_strength: 0.7,
+        model: :flux_schnell
+      )
+
+      # Complete regeneration (equivalent to text2img)
+      {:ok, image} = Margarine.img2img(
+        "a mountain landscape",
+        "noise.png",
+        denoising_strength: 1.0
+      )
+
+  """
+  @spec img2img(String.t(), String.t(), generation_opts()) ::
+          {:ok, Nx.Tensor.t()} | {:error, String.t()}
+  def img2img(prompt, init_image, opts \\ [])
+
+  def img2img(prompt, init_image, opts)
+      when is_binary(prompt) and is_binary(init_image) and is_list(opts) do
+    # Validate init_image exists
+    unless File.exists?(init_image) do
+      {:error, "Init image not found: #{init_image}"}
+    else
+      # Add init_image and denoising_strength to opts
+      denoising_strength = Keyword.get(opts, :denoising_strength, 0.75)
+
+      full_opts =
+        opts
+        |> Keyword.put(:prompt, prompt)
+        |> Keyword.put(:init_image, init_image)
+        |> Keyword.put(:denoising_strength, denoising_strength)
+
+      # Route to appropriate pipeline based on model
+      model = Keyword.get(opts, :model, :flux_schnell)
+
+      case model do
+        model when model in [:flux_schnell, :flux_dev] ->
+          # Same pipeline as text2img - just different initial latents!
+          with {:ok, state} <- Pipeline.prepare(full_opts),
+               {:ok, image} <- Pipeline.generate(state) do
+            {:ok, image}
+          end
+
+        model when model in [:sdxl_base, :sdxl_turbo] ->
+          # Same pipeline as text2img - just different initial latents!
+          with {:ok, state} <- Sdxl.prepare(full_opts),
+               {:ok, image} <- Sdxl.generate(state) do
+            {:ok, image}
+          end
+
+        _ ->
+          {:error, "Unsupported model: #{inspect(model)}"}
+      end
+    end
+  end
+
+  def img2img(_prompt, _init_image, _opts) do
+    {:error, "prompt and init_image must be strings"}
+  end
+
+  @doc """
   Check if the Python environment is initialized and ready.
 
   Returns a map with:

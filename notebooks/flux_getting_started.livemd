@@ -1,27 +1,15 @@
-# Getting Started with Margarine
-
-<!-- livebook:{"break_markdown":true} -->
-
-### Dependencies Setup
-
-Margarine requires an Nx backend for GPU/CPU acceleration. Choose based on your hardware:
+# Getting Started with FLUX.1 in Margarine
 
 ```elixir
 Mix.install([
-  {:margarine, "~> 0.1.0"},
+  {:margarine, "~> 0.2.0"},
   {:emlx, "~> 0.1"},  # For Apple Silicon (M1/M2/M3/M4 Macs)
   # {:exla, "~> 0.9"},  # For NVIDIA/AMD GPU or CPU (uncomment if not on Apple Silicon)
   {:kino, "~> 0.14"}
 ])
 ```
 
-**Note:** Uncomment the appropriate backend for your system:
-- **Apple Silicon Macs**: Use `{:emlx, "~> 0.1"}` (already active above)
-- **NVIDIA/AMD GPU or CPU**: Comment out emlx and uncomment `{:exla, "~> 0.9"}`
-
-<!-- livebook:{"break_markdown":true} -->
-
-### Configure Nx Backend
+## Section
 
 ```elixir
 # Configure the Nx backend to match your chosen dependency above
@@ -29,7 +17,14 @@ Nx.global_default_backend(EMLX.Backend)
 # For EXLA, use: Nx.global_default_backend(EXLA.Backend)
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+## Setup Notes
+
+**Backend Selection:** Uncomment the appropriate backend for your system:
+
+* **Apple Silicon Macs**: Use `{:emlx, "~> 0.1"}` (already active above)
+* **NVIDIA/AMD GPU or CPU**: Comment out emlx and uncomment `{:exla, "~> 0.9"}`
+
+Margarine requires an Nx backend for GPU/CPU acceleration. The first code block installs all dependencies, and the second configures the backend.
 
 ## Welcome to Margarine! 🧈
 
@@ -120,13 +115,7 @@ Let's start with a simple prompt. The first generation will take longer (2-5 min
 
 ```elixir
 # Enter your prompt
-prompt_input = Kino.Input.textarea("Enter your prompt", default: "A single rectangular stick of yellow margarine sitting in a spreading puddle of melted butter. The
-         + margarine stick is golden yellow with smooth rounded corners, slightly melting and dripping down the sides. Below it
-         +  is a large irregular puddle of liquid margarine spreading outward, with an oily rainbow sheen reflecting light. The
-         +  puddle has organic flowing edges. Clean illustration style with bold black outlines, bright yellow and golden
-         + colors. Simple clean background. Product illustration style, playful and slightly cartoonish but professional. View
-         + from slight angle showing 3D depth. The margarine stick should look soft and glossy, with visible melting occurring
-         + at the edges and bottom.")
+prompt_input = Kino.Input.textarea("Enter your prompt", default: "photorealistic chrome rocket flying around an asteroid with a starry background high detail 8k resolution")
 ```
 
 ```elixir

@@ -1,0 +1,609 @@
+# Getting Started with SDXL in Margarine
+
+```elixir
+Mix.install([
+  {:margarine, "~> 0.2.0"},
+  {:emlx, "~> 0.1"},  # For Apple Silicon (M1/M2/M3/M4 Macs)
+  # {:exla, "~> 0.9"},  # For NVIDIA/AMD GPU or CPU (uncomment if not on Apple Silicon)
+  {:kino, "~> 0.14"}
+])
+```
+
+## Section
+
+```elixir
+# Configure the Nx backend to match your chosen dependency above
+Nx.global_default_backend(EMLX.Backend)
+# For EXLA, use: Nx.global_default_backend(EXLA.Backend)
+```
+
+## Setup Notes
+
+**Development Version:** This notebook uses `path: Path.expand("..")` to load the local development version of Margarine from the parent directory. Once Margarine is published to Hex with SDXL support, you can change this to:
+
+```elixir
+#{:margarine, "~> 0.2.0"}  # Replace with version that includes SDXL
+```
+
+**Backend Selection:** Uncomment the appropriate backend for your system:
+
+* **Apple Silicon Macs**: Use `{:emlx, "~> 0.1"}` (already active above)
+* **NVIDIA/AMD GPU or CPU**: Comment out emlx and uncomment `{:exla, "~> 0.9"}`
+
+Margarine requires an Nx backend for GPU/CPU acceleration. The first code block installs all dependencies, and the second configures the backend.
+
+## Welcome to SDXL! 🎨
+
+**Stable Diffusion XL** is a powerful image generation model that produces high-quality images with excellent detail and composition. This notebook will guide you through both **text-to-image** and **image-to-image** generation.
+
+## What You'll Learn
+
+* How to generate images from text prompts (text2img)
+* How to transform existing images (img2img)
+* How to control image changes with denoising strength
+* Differences between SDXL Base and SDXL Turbo
+* The core principle: **text2img is just img2img starting from pure noise!**
+
+## Prerequisites
+
+* **Memory**: 10GB+ RAM (12GB recommended)
+* **Apple Silicon Mac** or **NVIDIA GPU** (CUDA 11.8+)
+* **Internet connection** (first run downloads ~7GB model)
+* **Optional**: HuggingFace account (for faster downloads)
+
+## Model Selection
+
+SDXL comes in two variants:
+
+### SDXL Turbo (Fast) ⚡
+
+* **Steps**: 1 (ultra-fast, ~10-20 seconds)
+* **Quality**: Good for rapid prototyping
+* **Memory**: ~7GB
+* **License**: OpenRAIL++ (free for most uses)
+* **Best for**: Quick iterations, testing, style transfer
+
+### SDXL Base (High Quality) 🎨
+
+* **Steps**: 20-50 (slower, ~1-3 minutes)
+* **Quality**: Excellent, production-ready images
+* **Memory**: ~7GB
+* **License**: OpenRAIL++ (free for most uses)
+* **Best for**: Final output, high-quality renders
+
+```elixir
+# Choose your model
+model_selector = Kino.Input.select("Select Model", [
+  {:sdxl_turbo, "SDXL Turbo (Ultra-fast, 1 step)"},
+  {:sdxl_base, "SDXL Base (High Quality, 20 steps)"}
+])
+```
+
+```elixir
+selected_model = Kino.Input.read(model_selector)
+IO.puts("✓ Selected model: #{selected_model}")
+
+# Show requirements for selected model
+case selected_model do
+  :sdxl_turbo ->
+    IO.puts("""
+
+    SDXL Turbo Requirements:
+    - Memory: ~7GB RAM
+    - Steps: 1 (ultra-fast generation)
+    - No HuggingFace token needed
+    - Free for most uses
+    """)
+
+  :sdxl_base ->
+    IO.puts("""
+
+    SDXL Base Requirements:
+    - Memory: ~7GB RAM
+    - Steps: 20 (high quality)
+    - No HuggingFace token needed
+    - Free for most uses
+    """)
+end
+```
+
+## Part 1: Text-to-Image Generation
+
+Let's start with text2img - generating images from scratch using only a text prompt.
+
+```elixir
+# Enter your prompt
+prompt_input = Kino.Input.textarea("Enter your prompt",
+  default: "a majestic red panda sitting on a tree branch, golden hour lighting, photorealistic, highly detailed")
+```
+
+```elixir
+prompt = Kino.Input.read(prompt_input)
+IO.puts("Prompt: #{prompt}")
+
+# Generate the image
+IO.puts("\n🎨 Starting text2img generation...")
+IO.puts("⏳ First run: Model will download (~7GB, takes 2-5 minutes)")
+IO.puts("⏳ Subsequent runs: Much faster (~10-20 seconds for Turbo, ~1-2 minutes for Base)")
+
+opts = [
+  model: selected_model,
+  steps: if(selected_model == :sdxl_turbo, do: 1, else: 20),
+  guidance_scale: if(selected_model == :sdxl_turbo, do: 0.0, else: 7.5),
+  size: {1024, 1024},
+  seed: 42  # For reproducibility
+]
+
+case Margarine.generate(prompt, opts) do
+  {:ok, image} ->
+    IO.puts("✅ Generation complete!")
+    IO.puts("Image shape: #{inspect(Nx.shape(image))}")
+    IO.puts("Image type: #{inspect(Nx.type(image))}")
+
+    # Save the image
+    output_path = "/tmp/sdxl_text2img_output.png"
+    case Margarine.Image.save(image, output_path) do
+      :ok ->
+        IO.puts("✅ Saved to: #{output_path}")
+
+        # Display the image
+        Kino.Image.new(File.read!(output_path), :png)
+
+      {:error, reason} ->
+        IO.puts("❌ Failed to save: #{inspect(reason)}")
+    end
+
+  {:error, reason} ->
+    IO.puts("❌ Generation failed: #{inspect(reason)}")
+    IO.puts("""
+
+    Common issues:
+    - Not enough memory (need 10GB+ RAM)
+    - First run needs internet connection
+    """)
+end
+```
+
+## Part 2: Image-to-Image Transformation
+
+Now for the magic! img2img lets you transform existing images according to your prompt. The `denoising_strength` parameter controls how much the image changes:
+
+* **1.0** = completely regenerate (equivalent to text2img)
+* **0.7** = moderate changes (70% noise)
+* **0.5** = balanced transformation
+* **0.3** = subtle changes (30% noise)
+* **0.0** = no changes (identity operation)
+
+### Step 1: Generate a Base Image
+
+First, let's create a simple base image to transform:
+
+```elixir
+# Generate a simple base image
+IO.puts("🎨 Generating base image for img2img experiments...")
+
+base_opts = [
+  model: :sdxl_turbo,  # Use Turbo for speed
+  steps: 1,
+  size: {512, 512},
+  seed: 999
+]
+
+{:ok, base_image} = Margarine.generate("a simple landscape with hills and sky", base_opts)
+base_path = "/tmp/sdxl_base_image.png"
+Margarine.Image.save(base_image, base_path)
+
+IO.puts("✅ Base image saved to: #{base_path}")
+Kino.Image.new(File.read!(base_path), :png)
+```
+
+### Step 2: Transform with Different Strengths
+
+Let's see how different denoising strengths affect the transformation!
+
+```elixir
+# Transformation prompt
+transform_prompt = Kino.Input.textarea("Transformation Prompt",
+  default: "a vibrant sunset landscape with mountains and glowing clouds")
+```
+
+```elixir
+transformation_prompt = Kino.Input.read(transform_prompt)
+IO.puts("Transformation: #{transformation_prompt}")
+
+# Try different strengths
+strengths = [0.3, 0.5, 0.7, 1.0]
+
+IO.puts("\n🎨 Generating #{length(strengths)} variations with different strengths...")
+
+results = Enum.map(strengths, fn strength ->
+  IO.puts("Generating with strength: #{strength}...")
+
+  opts = [
+    model: :sdxl_turbo,
+    steps: 1,
+    denoising_strength: strength,
+    seed: 42
+  ]
+
+  case Margarine.img2img(transformation_prompt, base_path, opts) do
+    {:ok, image} ->
+      path = "/tmp/sdxl_img2img_strength_#{strength}.png"
+      Margarine.Image.save(image, path)
+      {strength, path}
+
+    {:error, reason} ->
+      IO.puts("Failed strength #{strength}: #{inspect(reason)}")
+      nil
+  end
+end)
+|> Enum.reject(&is_nil/1)
+
+IO.puts("✅ Generated #{length(results)} transformations")
+
+# Display all images with their strengths
+images_to_display =
+  [{nil, base_path}] ++ results  # Add original first
+  |> Enum.map(fn
+    {nil, path} ->
+      [
+        Kino.Markdown.new("**Original Base Image**"),
+        Kino.Image.new(File.read!(path), :png)
+      ]
+
+    {strength, path} ->
+      [
+        Kino.Markdown.new("**Strength: #{strength}** (#{trunc(strength * 100)}% noise)"),
+        Kino.Image.new(File.read!(path), :png)
+      ]
+  end)
+  |> List.flatten()
+
+Kino.Layout.grid(images_to_display, columns: 1)
+```
+
+### The Core Principle: Text2img = Img2img(1.0) ✨
+
+Let's prove that text2img is just img2img starting from pure noise!
+
+```elixir
+IO.puts("🧪 Testing CORE PRINCIPLE: text2img == img2img(strength=1.0)")
+
+test_prompt = "a futuristic cyberpunk city at night"
+test_opts = [model: :sdxl_turbo, steps: 1, size: {512, 512}, seed: 123]
+
+# Generate with text2img
+IO.puts("\n1. Generating with text2img...")
+{:ok, text2img_result} = Margarine.generate(test_prompt, test_opts)
+text2img_path = "/tmp/sdxl_text2img_comparison.png"
+Margarine.Image.save(text2img_result, text2img_path)
+
+# Generate with img2img at strength=1.0
+IO.puts("2. Generating with img2img(strength=1.0)...")
+{:ok, img2img_result} = Margarine.img2img(
+  test_prompt,
+  base_path,
+  test_opts ++ [denoising_strength: 1.0]
+)
+img2img_path = "/tmp/sdxl_img2img_comparison.png"
+Margarine.Image.save(img2img_result, img2img_path)
+
+# Calculate similarity
+total_pixels = 512 * 512 * 3
+matching_pixels = Nx.equal(text2img_result, img2img_result) |> Nx.sum() |> Nx.to_number()
+match_percentage = (matching_pixels / total_pixels) * 100
+
+IO.puts("\n✅ Match: #{Float.round(match_percentage, 2)}%")
+IO.puts("They should be nearly identical (>99%)!")
+
+# Display comparison
+comparison = [
+  Kino.Markdown.new("**Text2img**"),
+  Kino.Image.new(File.read!(text2img_path), :png),
+  Kino.Markdown.new("**Img2img(strength=1.0)**"),
+  Kino.Image.new(File.read!(img2img_path), :png),
+  Kino.Markdown.new("**Match: #{Float.round(match_percentage, 2)}%** - They're the same!")
+]
+
+Kino.Layout.grid(comparison, columns: 1)
+```
+
+## Advanced: Guidance Scale Exploration
+
+SDXL Base supports guidance scale (SDXL Turbo doesn't). Let's see how it affects the output:
+
+```elixir
+# Only run if using SDXL Base
+if selected_model == :sdxl_base do
+  guidance_prompt = "a magical forest with glowing mushrooms and fireflies"
+
+  guidance_scales = [3.0, 7.5, 12.0]
+
+  IO.puts("🎨 Testing guidance scales: #{inspect(guidance_scales)}")
+
+  guidance_results = Enum.map(guidance_scales, fn scale ->
+    IO.puts("Generating with guidance scale: #{scale}...")
+
+    opts = [
+      model: :sdxl_base,
+      steps: 10,  # Reduced for speed
+      guidance_scale: scale,
+      size: {512, 512},
+      seed: 789
+    ]
+
+    case Margarine.generate(guidance_prompt, opts) do
+      {:ok, image} ->
+        path = "/tmp/sdxl_guidance_#{scale}.png"
+        Margarine.Image.save(image, path)
+        {scale, path}
+
+      {:error, reason} ->
+        IO.puts("Failed: #{inspect(reason)}")
+        nil
+    end
+  end)
+  |> Enum.reject(&is_nil/1)
+
+  # Display results
+  guidance_display = Enum.map(guidance_results, fn {scale, path} ->
+    [
+      Kino.Markdown.new("**Guidance Scale: #{scale}**"),
+      Kino.Markdown.new("Low = creative, High = follows prompt closely"),
+      Kino.Image.new(File.read!(path), :png)
+    ]
+  end)
+  |> List.flatten()
+
+  Kino.Layout.grid(guidance_display, columns: 1)
+else
+  Kino.Markdown.new("⚠️ Guidance scale exploration is only available for SDXL Base. SDXL Turbo uses guidance_scale=0.0 by default.")
+end
+```
+
+## Style Transfer with Img2img
+
+Upload your own image and transform it! 🎨
+
+```elixir
+# Input for your image path
+user_image_input = Kino.Input.text("Path to your image", default: "/absolute/path/to/some/image.png")
+style_prompt_input = Kino.Input.textarea("Style transformation prompt",
+  default: "transform into a vibrant oil painting with bold brush strokes and vivid colors")
+strength_input = Kino.Input.number("Denoising Strength (0.0-1.0)", default: 0.6)
+
+form = Kino.Layout.grid([user_image_input, style_prompt_input, strength_input], columns: 1)
+```
+
+```elixir
+# Read inputs
+user_image_path = Kino.Input.read(user_image_input)
+style_prompt = Kino.Input.read(style_prompt_input)
+style_strength = Kino.Input.read(strength_input)
+
+# Check if image exists
+if File.exists?(user_image_path) do
+  IO.puts("🎨 Applying style transformation...")
+  IO.puts("Image: #{user_image_path}")
+  IO.puts("Style: #{style_prompt}")
+  IO.puts("Strength: #{style_strength}")
+
+  # Load image to get original dimensions
+  {:ok, original} = Margarine.Image.load(user_image_path)
+  {orig_height, orig_width, _} = Nx.shape(original)
+
+  # Round to nearest multiple of 8 (required for VAE)
+  target_height = div(orig_height + 4, 8) * 8
+  target_width = div(orig_width + 4, 8) * 8
+
+  IO.puts("Original size: #{orig_height}x#{orig_width}")
+  IO.puts("Target size: #{target_height}x#{target_width} (rounded to multiple of 8)")
+
+  opts = [
+    model: selected_model,
+    steps: if(selected_model == :sdxl_turbo, do: 1, else: 20),
+    size: {target_height, target_width},
+    denoising_strength: style_strength,
+    seed: 42
+  ]
+
+  case Margarine.img2img(style_prompt, user_image_path, opts) do
+    {:ok, transformed} ->
+      output_path = "/tmp/sdxl_style_transfer_output.png"
+      Margarine.Image.save(transformed, output_path)
+
+      IO.puts("✅ Style transfer complete!")
+
+      # Show before and after
+      display = [
+        Kino.Markdown.new("**Original**"),
+        Kino.Image.new(File.read!(user_image_path), :png),
+        Kino.Markdown.new("**Transformed** (strength: #{style_strength})"),
+        Kino.Image.new(File.read!(output_path), :png)
+      ]
+
+      Kino.Layout.grid(display, columns: 1)
+
+    {:error, reason} ->
+      IO.puts("❌ Failed: #{inspect(reason)}")
+  end
+else
+  Kino.Markdown.new("⚠️ Image not found: #{user_image_path}")
+end
+```
+
+## Batch Generation
+
+Generate multiple variations quickly!
+
+```elixir
+batch_prompt = "a cozy coffee shop interior, warm lighting, plants and books"
+
+seeds = [100, 200, 300, 400]
+
+IO.puts("🎨 Generating #{length(seeds)} variations...")
+
+batch_results = Enum.map(seeds, fn seed ->
+  IO.puts("Generating seed #{seed}...")
+
+  opts = [
+    model: :sdxl_turbo,  # Use Turbo for speed
+    steps: 1,
+    size: {512, 512},
+    seed: seed
+  ]
+
+  case Margarine.generate(batch_prompt, opts) do
+    {:ok, image} ->
+      path = "/tmp/sdxl_batch_#{seed}.png"
+      Margarine.Image.save(image, path)
+      {seed, path}
+
+    {:error, reason} ->
+      IO.puts("Failed seed #{seed}: #{inspect(reason)}")
+      nil
+  end
+end)
+|> Enum.reject(&is_nil/1)
+
+IO.puts("✅ Generated #{length(batch_results)} variations")
+
+# Display grid
+batch_display = Enum.map(batch_results, fn {seed, path} ->
+  [
+    Kino.Markdown.new("**Seed: #{seed}**"),
+    Kino.Image.new(File.read!(path), :png)
+  ]
+end)
+|> List.flatten()
+
+Kino.Layout.grid(batch_display, columns: 2)
+```
+
+## Tips & Best Practices
+
+### SDXL Prompt Engineering
+
+**SDXL responds well to detailed prompts:**
+
+* ✅ "a majestic lion with golden mane, dramatic lighting, professional wildlife photography, 8k, highly detailed"
+* ❌ "lion"
+
+**Quality modifiers that work well:**
+
+* "photorealistic", "highly detailed", "8k resolution"
+* "professional photography", "cinematic lighting"
+* "masterpiece", "award winning"
+
+**Style keywords:**
+
+* Photography: "DSLR", "bokeh", "depth of field", "golden hour"
+* Art: "oil painting", "watercolor", "digital art", "concept art"
+* Specific artists: "in the style of [artist name]"
+
+### Img2img Best Practices
+
+**Choosing the right strength:**
+
+* **0.2-0.4**: Subtle style changes, color adjustments, lighting tweaks
+* **0.5-0.7**: Moderate transformations, style transfer, composition changes
+* **0.8-0.9**: Heavy changes, major stylistic shifts
+* **1.0**: Complete regeneration (use text2img instead!)
+
+**Use cases:**
+
+* **Style transfer**: 0.5-0.7 works great
+* **Color grading**: 0.2-0.3 preserves composition
+* **Composition remix**: 0.7-0.9 allows big changes
+* **Detail enhancement**: 0.3-0.5 adds detail while keeping structure
+
+### Model Selection Guide
+
+**Use SDXL Turbo when:**
+
+* Prototyping and testing ideas
+* Need fast iterations
+* Doing img2img style transfer
+* Memory constrained (~7GB)
+
+**Use SDXL Base when:**
+
+* Final production renders
+* Need highest quality
+* Want precise prompt following
+* Have time for longer generation
+
+### Memory Management
+
+**If you run out of memory:**
+
+1. Close other applications
+2. Use smaller image sizes (512x512)
+3. Use SDXL Turbo (same memory but faster)
+4. Restart Elixir runtime to clear cached models
+
+## Troubleshooting
+
+### Common Errors
+
+**Out of Memory**
+
+```
+[Margarine.SdxlPythonxServer] ✗ Insufficient memory
+```
+
+**Solution:** Close apps, use 512x512, or restart runtime
+
+**Model Download Timeout**
+
+```
+Connection timeout
+```
+
+**Solution:** Check internet, try again (download resumes)
+
+**Image File Not Found (img2img)**
+
+```
+Init image not found: /path/to/image.png
+```
+
+**Solution:** Check file path, use absolute paths
+
+## The Magic of Img2img ✨
+
+**Key Insight:** Once you understand img2img, you understand everything!
+
+* **Text2img** = Start from pure noise (random pixels)
+* **Img2img** = Start from encoded image + some noise
+* **Same denoising loop for both!**
+
+This means:
+
+* You can switch between models mid-generation
+* You can pause and resume with different parameters
+* You can chain transformations
+* You can mix SDXL with FLUX (future feature!)
+
+## Next Steps
+
+1. **Experiment with strengths**: Try different values to find your sweet spot
+2. **Mix text2img and img2img**: Generate base images, then transform them
+3. **Create workflows**: Chain multiple transformations
+4. **Integrate in your app**: Use in Phoenix, CLI tools, batch processors
+
+## Resources
+
+* **Documentation**: [HexDocs](https://hexdocs.pm/margarine)
+* **GitHub**: [GenericJam/margarine](https://github.com/GenericJam/margarine)
+* **SDXL Paper**: [SDXL: Improving Latent Diffusion Models](https://arxiv.org/abs/2307.01952)
+
+## License
+
+Margarine is licensed under MIT.
+
+**SDXL License:** OpenRAIL++ (permissive, free for most uses)
+
+---
+
+Happy generating! 🎨✨
