@@ -5,19 +5,21 @@
 </p>
 
 
-AI-powered image generation for Elixir using FLUX.
+AI-powered image generation for Elixir using FLUX and SDXL.
 
-Margarine brings state-of-the-art text-to-image generation to the Elixir ecosystem with a clean, native API. Generate beautiful images from text prompts with just a few lines of code.
+Margarine brings state-of-the-art text-to-image and image-to-image generation to the Elixir ecosystem with a clean, native API. Generate beautiful images from text prompts or transform existing images with just a few lines of code.
 
 ## Features
 
-- 🎨 **FLUX Integration** - Fast, high-quality image generation with FLUX Schnell and FLUX Dev
+- 🎨 **FLUX Integration** - Artistic image generation with FLUX Schnell and FLUX Dev
+- 📸 **SDXL Integration** - Photorealistic images with Stable Diffusion XL (Base and Turbo)
+- 🔄 **Image-to-Image** - Transform images with both FLUX and SDXL models
 - ⚡ **Zero-Copy Performance** - Pythonx integration for efficient tensor transfer between Elixir and Python
 - 🚀 **Zero Configuration** - Python and dependencies installed automatically on first run via UV
 - 🍎 **Apple Silicon Support** - Optimized for M-series Macs with EMLX/Metal backend
 - 🔥 **CUDA Support** - NVIDIA GPU acceleration via EXLA/XLA
 - 💾 **Memory Safety** - Automatic checks prevent OOM crashes
-- 🧪 **Production Ready** - Comprehensive tests (119+), telemetry, and error handling
+- 🧪 **Production Ready** - Comprehensive tests (148+), telemetry, and error handling
 - 📊 **Type Safe** - Full Dialyzer type specs on all public functions
 
 ## Quick Start
@@ -26,7 +28,7 @@ Margarine brings state-of-the-art text-to-image generation to the Elixir ecosyst
 # Add to mix.exs
 def deps do
   [
-    {:margarine, "~> 0.1.0"},
+    {:margarine, "~> 0.2.0"},
 
     # REQUIRED: Choose ONE Nx backend based on your hardware
     {:emlx, "~> 0.1"}  # For Apple Silicon (M1/M2/M3/M4)
@@ -38,16 +40,22 @@ end
 **Important:** You must install either EMLX or EXLA alongside Margarine. The backend handles GPU/CPU acceleration for tensor operations.
 
 ```elixir
-# Simple text-to-image
+# Simple text-to-image with FLUX
 {:ok, image} = Margarine.generate("a red panda eating bamboo")
 Margarine.Image.save(image, "panda.png")
 
-# Advanced options
+# Photorealistic with SDXL
 {:ok, image} = Margarine.generate("a serene mountain landscape at sunset",
-  model: :flux_schnell,  # or :flux_dev for higher quality
-  steps: 4,              # 4 for schnell, 28 for dev
-  seed: 42,              # for reproducibility
-  size: {1024, 1024}     # width x height
+  model: :sdxl_turbo,   # Fast photorealistic generation
+  steps: 1
+)
+
+# Image-to-image transformation
+{:ok, image} = Margarine.img2img(
+  "turn into a watercolor painting",
+  "photo.png",
+  denoising_strength: 0.5,  # How much to change (0.0-1.0)
+  model: :sdxl_base
 )
 ```
 
@@ -129,6 +137,8 @@ end
 ### Model Memory Requirements
 - **FLUX Schnell**: ~12GB VRAM (GPU) or ~16GB RAM (CPU)
 - **FLUX Dev**: ~12GB VRAM (GPU) or ~16GB RAM (CPU)
+- **SDXL Turbo**: ~7GB VRAM (GPU) or ~12GB RAM (CPU)
+- **SDXL Base**: ~7GB VRAM (GPU) or ~12GB RAM (CPU)
 
 ## Usage Examples
 
@@ -161,12 +171,48 @@ opts = [seed: 42, model: :flux_schnell]
 ### High-Quality Generation
 
 ```elixir
-# Use FLUX Dev for higher quality (slower)
-{:ok, image} = Margarine.generate("a photorealistic portrait",
+# Use FLUX Dev for artistic quality
+{:ok, image} = Margarine.generate("a cyberpunk cityscape",
   model: :flux_dev,
   steps: 28,
   guidance_scale: 3.5,
   size: {1024, 1024}
+)
+
+# Use SDXL Base for photorealistic quality
+{:ok, image} = Margarine.generate("a photorealistic portrait",
+  model: :sdxl_base,
+  steps: 20,
+  guidance_scale: 7.5,
+  size: {1024, 1024}
+)
+```
+
+### Image-to-Image Transformation
+
+```elixir
+# Subtle style change (keep most of original)
+{:ok, image} = Margarine.img2img(
+  "watercolor painting style",
+  "photo.png",
+  denoising_strength: 0.3,
+  model: :sdxl_base
+)
+
+# Moderate transformation
+{:ok, image} = Margarine.img2img(
+  "oil painting, impressionist style",
+  "photo.png",
+  denoising_strength: 0.6,
+  model: :flux_schnell
+)
+
+# Heavy modification (only rough composition remains)
+{:ok, image} = Margarine.img2img(
+  "cyberpunk city at night",
+  "photo.png",
+  denoising_strength: 0.8,
+  model: :sdxl_base
 )
 ```
 
@@ -200,15 +246,26 @@ end
 
 ## Configuration Options
 
-All options are passed to `Margarine.generate/2`:
+### Text-to-Image Options (`Margarine.generate/2`)
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `:model` | `:flux_schnell` \| `:flux_dev` | `:flux_schnell` | Model to use |
-| `:steps` | `pos_integer()` | Model-specific (4 or 28) | Number of denoising steps |
-| `:guidance_scale` | `float()` | Model-specific (0.0 or 3.5) | Guidance strength |
+| `:model` | `:flux_schnell` \| `:flux_dev` \| `:sdxl_turbo` \| `:sdxl_base` | `:flux_schnell` | Model to use |
+| `:steps` | `pos_integer()` | Model-specific | Number of denoising steps (4 for schnell, 28 for dev, 1 for turbo, 20 for base) |
+| `:guidance_scale` | `float()` | Model-specific | Guidance strength (0.0 for schnell/turbo, 3.5 for dev, 7.5 for base) |
 | `:seed` | `integer()` \| `nil` | `nil` (random) | Random seed for reproducibility |
-| `:size` | `{width, height}` | `{1024, 1024}` | Image dimensions (must be divisible by 8) |
+| `:size` | `{height, width}` | `{1024, 1024}` | Image dimensions (must be divisible by 8) |
+
+### Image-to-Image Options (`Margarine.img2img/3`)
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `:model` | `:flux_schnell` \| `:flux_dev` \| `:sdxl_turbo` \| `:sdxl_base` | `:flux_schnell` | Model to use |
+| `:denoising_strength` | `float()` (0.0-1.0) | `0.75` | How much to modify (0.0 = no change, 1.0 = complete regeneration) |
+| `:steps` | `pos_integer()` | Model-specific | Number of denoising steps |
+| `:guidance_scale` | `float()` | Model-specific | Guidance strength |
+| `:seed` | `integer()` \| `nil` | `nil` (random) | Random seed for reproducibility |
+| `:size` | `{height, width}` \| `nil` | Auto-detect from image | Target dimensions (defaults to original image size, rounded to multiple of 8) |
 
 ## Architecture
 
@@ -260,29 +317,34 @@ We welcome contributions! Please:
 
 ## Roadmap
 
-### Phase 1: FLUX MVP ✅
+### Phase 1: FLUX MVP ✅ (v0.1.0)
 - [x] FLUX Schnell and Dev support
 - [x] Zero-copy Pythonx integration
 - [x] Automatic Python/dependency installation
 - [x] Memory safety checks
 - [x] Comprehensive test suite
 
-### Phase 2: Advanced FLUX (Upcoming)
+### Phase 2: SDXL + Image-to-Image ✅ (v0.2.0)
+- [x] SDXL Base and Turbo support
+- [x] Dual CLIP text encoders
+- [x] DDIM scheduler implementation
+- [x] Image-to-image for both FLUX and SDXL
+- [x] Automatic dimension handling (RGBA, non-square, auto-rounding)
+- [x] Comprehensive img2img tests
+
+### Phase 3: Inpainting (Planned)
+- [ ] SDXL Inpaint model support
+- [ ] Mask preprocessing utilities
+- [ ] Inpainting pipeline
+- [ ] Interactive mask editing
+
+### Phase 4: Advanced Features (Future)
 - [ ] Streaming intermediate results
 - [ ] Batch generation
-- [ ] Custom schedulers (DDIM, DPM++)
-- [ ] Performance optimizations
-
-### Phase 3: Image-to-Image (Future)
-- [ ] Image loading and preprocessing
-- [ ] Strength parameter
-- [ ] img2img pipeline
-
-### Phase 4: Stable Diffusion (Future)
-- [ ] SD 1.5, SD 2.1, SDXL support
-- [ ] Unified API across models
 - [ ] LoRA support
 - [ ] ControlNet integration
+- [ ] Custom schedulers (DPM++, etc.)
+- [ ] Performance optimizations
 
 ## Troubleshooting
 

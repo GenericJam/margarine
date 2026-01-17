@@ -81,7 +81,7 @@ defmodule Margarine.Application do
     pyproject_toml = """
     [project]
     name = "margarine"
-    version = "0.1.0"
+    version = "0.2.0"
     requires-python = ">=3.11"
     dependencies = [
       "torch>=2.0.0",
@@ -96,7 +96,7 @@ defmodule Margarine.Application do
     """
 
     try do
-      Pythonx.uv_init(pyproject_toml)
+      Pythonx.uv_init(pyproject_toml, native_tls: true)
       Logger.info("[Margarine] ✓ Python environment initialized")
     rescue
       error ->

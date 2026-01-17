@@ -7,13 +7,18 @@ defmodule MargarineTest do
   Tests the main user-facing functions:
   - Margarine.generate/1 (simple prompt)
   - Margarine.generate/2 (prompt + options)
+
+  Note: Tests that actually call generate() require @tag :slow since they
+  perform real model inference which takes 2-5 minutes.
   """
 
   alias Margarine
 
   describe "generate/1" do
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts a simple string prompt" do
-      # For now, we expect this to fail gracefully until we implement Python server integration
+      # This actually runs FLUX generation
       result = Margarine.generate("a red panda")
 
       # Should return {:ok, tensor} or {:error, reason}
@@ -37,36 +42,50 @@ defmodule MargarineTest do
   end
 
   describe "generate/2" do
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts prompt with empty options" do
       result = Margarine.generate("a red panda", [])
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts valid model option" do
       result = Margarine.generate("a red panda", model: :flux_schnell)
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts valid steps option" do
       result = Margarine.generate("a red panda", steps: 4)
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts valid guidance_scale option" do
       result = Margarine.generate("a red panda", guidance_scale: 3.5)
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts valid seed option" do
       result = Margarine.generate("a red panda", seed: 42)
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts valid size option" do
       result = Margarine.generate("a red panda", size: {1024, 1024})
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
+    @tag :slow
+    @tag timeout: 300_000
     test "accepts all options together" do
       opts = [
         model: :flux_schnell,
@@ -107,7 +126,8 @@ defmodule MargarineTest do
 
     test "rejects size not divisible by 8" do
       assert {:error, reason} = Margarine.generate("test", size: {1023, 1024})
-      assert reason =~ "divisible by 8"
+      # FLUX requires divisible by 16, SDXL requires divisible by 8
+      assert reason =~ "divisible by"
     end
   end
 
