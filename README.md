@@ -32,7 +32,7 @@ def deps do
 
     # REQUIRED: Choose ONE Nx backend based on your hardware
     {:emlx, "~> 0.1"}  # For Apple Silicon (M1/M2/M3/M4)
-    # {:exla, "~> 0.9"}  # For NVIDIA/AMD GPU or CPU
+    # {:exla, "~> 0.10"}  # For NVIDIA/AMD GPU or CPU
   ]
 end
 ```
@@ -117,7 +117,7 @@ def deps do
 
     # Choose ONE backend:
     {:emlx, "~> 0.1"}   # Apple Silicon (M1/M2/M3/M4) - Recommended for Macs
-    # {:exla, "~> 0.9"}  # NVIDIA/AMD GPU or CPU
+    # {:exla, "~> 0.10"}  # NVIDIA/AMD GPU or CPU
     # {:torchx, "~> 0.7"}  # PyTorch backend (experimental)
   ]
 end
@@ -138,6 +138,8 @@ config :nx,
 #   default_backend: EXLA.Backend,
 #   default_defn_options: [compiler: EXLA]
 ```
+
+**For NVIDIA GPU users on Linux:** See the [EXLA Setup Guide for Linux (NVIDIA GPU)](EXLA_SETUP_LINUX_NVIDIA.md) for detailed CUDA installation and configuration instructions.
 
 ### 3. First Run Setup
 
@@ -415,6 +417,10 @@ The first run takes 2-5 minutes to download Python and dependencies. Subsequent 
 - **Interactive Tutorials**: See the [Interactive Tutorials](#-interactive-tutorials-recommended) section above
   - [`notebooks/flux_getting_started.livemd`](notebooks/flux_getting_started.livemd) - FLUX tutorial
   - [`notebooks/sdxl_getting_started.livemd`](notebooks/sdxl_getting_started.livemd) - SDXL tutorial
+- **Setup Guides**:
+  - [EXLA Setup Guide for Linux (NVIDIA GPU)](EXLA_SETUP_LINUX_NVIDIA.md) - Complete CUDA setup instructions
+  - [Torchx Setup Guide](TORCHX_SETUP.md) - Cross-platform PyTorch backend (experimental but promising)
+  - [Memory Limiting Guide](MEMORY_LIMITING_GUIDE.md) - Memory management and OOM prevention
 - **API Docs**: [hexdocs.pm/margarine](https://hexdocs.pm/margarine)
 - **Examples**: See `examples/` directory for runnable scripts
 - **Changelog**: See `CHANGELOG.md` for version history

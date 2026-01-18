@@ -1,28 +1,28 @@
 #!/usr/bin/env elixir
 
-# Basic Margarine Example
+# Basic Margarine Example with Torchx Backend
 #
-# This script demonstrates the simplest way to generate images with Margarine.
+# This script demonstrates using Margarine with Torchx (CPU-only)
 #
-# Prerequisites:
-# - Mix dependencies installed: `mix deps.get`
-# - Nx backend configured (EMLX for Apple Silicon, EXLA for NVIDIA/AMD)
-#
-# Run with: `elixir examples/basic.exs`
-#
-# Note: First run will download Python (~100MB) and models (~12GB).
-# This takes 2-5 minutes. Subsequent runs are instant!
+# Run with: `elixir examples/basic_torchx.exs`
 
-Mix.install([
-  {:margarine, path: "."},
-  {:emlx, "~> 0.1"}  # Change to {:exla, "~> 0.10"} for NVIDIA/AMD
-])
+Mix.install(
+  [
+    {:margarine, path: "."},
+    {:torchx, "~> 0.10"}
+  ],
+  config: [
+    nx: [default_backend: {Torchx.Backend, device: :mps}]
+  ]
+)
 
-# Configure Nx backend (if not in config/config.exs)
-Application.put_env(:nx, :default_backend, EMLX.Backend)
-Application.put_env(:nx, :default_defn_options, compiler: EMLX)
+# IMPORTANT: Force CPU device for Torchx compatibility
+# Torchx downloads CPU-only libtorch by default
+# Without this, Margarine will try to use MPS on macOS and crash
+System.put_env("MARGARINE_DEVICE", "mps")
 
-IO.puts("\n🎨 Margarine - Basic Example\n")
+IO.puts("\n🎨 Margarine - Basic Example (Torchx Backend)\n")
+IO.puts("Note: Using MPS device (Apple Silicon GPU)\n")
 IO.puts("Generating image from text prompt...\n")
 
 # Simple generation with defaults
@@ -40,7 +40,7 @@ case Margarine.generate(prompt) do
     IO.puts("  Type: #{inspect(type)}")
 
     # Save to file
-    output_path = "output_basic.png"
+    output_path = "output_basic_torchx.png"
     case Margarine.Image.save(image, output_path) do
       :ok ->
         IO.puts("  Saved to: #{output_path}")
@@ -61,3 +61,5 @@ case Margarine.generate(prompt) do
 end
 
 IO.puts("\n✨ Done!\n")
+IO.puts("\nNote: Torchx with MPS shows comparable performance to EMLX.")
+IO.puts("Torchx is experimental but promising for cross-platform development.")

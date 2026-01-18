@@ -217,6 +217,15 @@ def transformer_forward(
     dtype = _models["dtype"]
 
     # Convert inputs to torch tensors
+    # NOTE: Copy arrays if not writable (happens with some Nx backends like Torchx)
+    # to prevent "non-writable tensor" warnings and NaN issues
+    if not latents_np.flags.writeable:
+        latents_np = latents_np.copy()
+    if not prompt_embeds_np.flags.writeable:
+        prompt_embeds_np = prompt_embeds_np.copy()
+    if not pooled_embeds_np.flags.writeable:
+        pooled_embeds_np = pooled_embeds_np.copy()
+
     latents = torch.from_numpy(latents_np).to(device=device, dtype=dtype)
     prompt_embeds = torch.from_numpy(prompt_embeds_np).to(device=device, dtype=dtype)
     pooled_embeds = torch.from_numpy(pooled_embeds_np).to(device=device, dtype=dtype)
@@ -332,6 +341,9 @@ def vae_decode(latents_np):
     vae_dtype = next(vae.parameters()).dtype
 
     # Convert to torch tensor
+    # Copy if not writable (Torchx backend creates read-only arrays)
+    if not latents_np.flags.writeable:
+        latents_np = latents_np.copy()
     latents = torch.from_numpy(latents_np).to(device=device, dtype=vae_dtype)
 
     # FLUX VAE scaling
@@ -391,6 +403,10 @@ def vae_encode(image_np):
     device = _models["device"]
 
     vae_dtype = next(vae.parameters()).dtype
+
+    # Copy if not writable (Torchx backend creates read-only arrays)
+    if not image_np.flags.writeable:
+        image_np = image_np.copy()
     image = torch.from_numpy(image_np).to(device=device, dtype=vae_dtype)
 
     with torch.no_grad():

@@ -4,7 +4,7 @@ defmodule Margarine.MixProject do
   def project do
     [
       app: :margarine,
-      version: "0.2.1",
+      version: "0.2.2",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -60,7 +60,7 @@ defmodule Margarine.MixProject do
       # Optional backend dependencies (users choose one)
       # Uncomment the backend you want to use:
       # {:emlx, "~> 0.1", optional: true},
-      # {:exla, "~> 0.9", optional: true},
+      # {:exla, "~> 0.10", optional: true},
       # {:torchx, "~> 0.7", optional: true}
     ]
   end

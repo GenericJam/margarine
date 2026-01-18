@@ -2,9 +2,9 @@
 
 ```elixir
 Mix.install([
-  {:margarine, "~> 0.2.0"},
+  {:margarine, "~> 0.2.2"},
   {:emlx, "~> 0.1"},  # For Apple Silicon (M1/M2/M3/M4 Macs)
-  # {:exla, "~> 0.9"},  # For NVIDIA/AMD GPU or CPU (uncomment if not on Apple Silicon)
+  # {:exla, "~> 0.10"},  # For NVIDIA/AMD GPU or CPU (uncomment if not on Apple Silicon)
   {:kino, "~> 0.14"}
 ])
 ```
@@ -19,16 +19,10 @@ Nx.global_default_backend(EMLX.Backend)
 
 ## Setup Notes
 
-**Development Version:** This notebook uses `path: Path.expand("..")` to load the local development version of Margarine from the parent directory. Once Margarine is published to Hex with SDXL support, you can change this to:
-
-```elixir
-#{:margarine, "~> 0.2.0"}  # Replace with version that includes SDXL
-```
-
 **Backend Selection:** Uncomment the appropriate backend for your system:
 
 * **Apple Silicon Macs**: Use `{:emlx, "~> 0.1"}` (already active above)
-* **NVIDIA/AMD GPU or CPU**: Comment out emlx and uncomment `{:exla, "~> 0.9"}`
+* **NVIDIA/AMD GPU or CPU**: Comment out emlx and uncomment `{:exla, "~> 0.10"}`
 
 Margarine requires an Nx backend for GPU/CPU acceleration. The first code block installs all dependencies, and the second configures the backend.
 

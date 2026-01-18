@@ -13,7 +13,7 @@
 
 Mix.install([
   {:margarine, path: "."},
-  {:emlx, "~> 0.1"}  # Change to {:exla, "~> 0.9"} for NVIDIA/AMD
+  {:emlx, "~> 0.1"}  # Change to {:exla, "~> 0.10"} for NVIDIA/AMD
 ])
 
 # Configure Nx backend

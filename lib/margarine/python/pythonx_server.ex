@@ -510,9 +510,19 @@ cleanup_success
 
   defp detect_device do
     cond do
-      System.get_env("CUDA_VISIBLE_DEVICES") -> "cuda"
-      :os.type() == {:unix, :darwin} -> "mps"
-      true -> "cpu"
+      # Allow explicit device override via environment variable
+      device = System.get_env("MARGARINE_DEVICE") ->
+        device
+
+      # Auto-detect based on system
+      System.get_env("CUDA_VISIBLE_DEVICES") ->
+        "cuda"
+
+      :os.type() == {:unix, :darwin} ->
+        "mps"
+
+      true ->
+        "cpu"
     end
   end
 end

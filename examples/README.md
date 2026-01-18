@@ -18,6 +18,10 @@ Example scripts demonstrating how to use Margarine for AI image generation.
    # config :nx, default_backend: EXLA.Backend, default_defn_options: [compiler: EXLA]
    ```
 
+   **Notes:**
+   - For NVIDIA GPU users on Linux, see the [EXLA Setup Guide](../EXLA_SETUP_LINUX_NVIDIA.md) for detailed CUDA installation instructions.
+   - For Torchx setup (not recommended), see the [Torchx Setup Guide](../TORCHX_SETUP.md).
+
 3. **First run:** The first time you run any example, Margarine will automatically download:
    - Python 3.11+ (~100MB)
    - PyTorch and dependencies (~500MB)
@@ -134,6 +138,36 @@ elixir examples/img2img_test.exs
 - Understanding FLUX img2img
 - Comparing with SDXL img2img
 - Testing different modification levels
+
+### Alternative Backend Examples
+
+#### `basic_torchx.exs` - Torchx Backend (Experimental)
+
+🧪 **Experimental** - Comparable performance to EMLX but less tested.
+
+Demonstrates using Torchx backend with MPS on Apple Silicon:
+
+```bash
+elixir examples/basic_torchx.exs
+```
+
+**What it does:**
+- Uses Torchx backend with MPS device (Apple Silicon GPU)
+- Demonstrates comparable performance to EMLX
+- Shows cross-platform backend option
+
+**Good for:**
+- Experimenting with alternative backends
+- Cross-platform development
+- Understanding backend configuration
+
+**Performance:**
+- ~1m 30s for 1024x1024 FLUX Schnell (similar to EMLX)
+- Benchmarks show ~7% difference vs EMLX
+
+**Note:** Experimental - less tested than EMLX but showing promising results.
+
+See the [Torchx Setup Guide](../TORCHX_SETUP.md) for detailed information.
 
 ## Model Comparison: FLUX vs SDXL
 

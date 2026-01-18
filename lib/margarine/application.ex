@@ -81,7 +81,7 @@ defmodule Margarine.Application do
     pyproject_toml = """
     [project]
     name = "margarine"
-    version = "0.2.0"
+    version = "0.2.2"
     requires-python = ">=3.11"
     dependencies = [
       "torch>=2.0.0",
