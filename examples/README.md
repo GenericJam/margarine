@@ -275,6 +275,21 @@ end
 
 Wait 2-5 minutes on first run for Python and dependencies to download.
 
+### Timeout Errors
+
+If generation times out (especially on 24GB systems):
+
+1. **Increase timeout** in your app's `config/config.exs`:
+   ```elixir
+   config :margarine, timeout: 900_000  # 15 minutes
+   ```
+
+2. **Use smaller models**: SDXL (7GB) instead of FLUX (14GB)
+
+3. **Reduce image size**: `size: {512, 512}` uses ~75% less memory
+
+See [CONFIG_24GB_SYSTEMS.md](../CONFIG_24GB_SYSTEMS.md) for detailed guidance.
+
 ### Out of Memory
 
 - Reduce image size

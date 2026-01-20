@@ -24,7 +24,10 @@ defmodule Margarine.Python.PythonxServer do
   use GenServer
   require Logger
 
-  @call_timeout 300_000  # 5 minutes for model loading
+  # Default timeout: 5 minutes, but can be overridden in config
+  defp call_timeout do
+    Margarine.Config.get(:timeout, 300_000)
+  end
 
   defp python_module_dir do
     Path.join(:code.priv_dir(:margarine), "python")
@@ -38,13 +41,13 @@ defmodule Margarine.Python.PythonxServer do
   end
 
   def initialize_model(server, model, opts \\ []) do
-    GenServer.call(server, {:initialize_model, model, opts}, @call_timeout)
+    GenServer.call(server, {:initialize_model, model, opts}, call_timeout())
   end
 
   def encode_prompt(server, prompt, opts \\ []) do
     negative = Keyword.get(opts, :negative_prompt, "")
     guidance = Keyword.get(opts, :guidance_scale, 3.5)
-    GenServer.call(server, {:encode_prompt, prompt, negative, guidance}, @call_timeout)
+    GenServer.call(server, {:encode_prompt, prompt, negative, guidance}, call_timeout())
   end
 
   def transformer_forward(server, latents, timestep, prompt_embeds, pooled_embeds, opts \\ []) do
@@ -52,20 +55,20 @@ defmodule Margarine.Python.PythonxServer do
     GenServer.call(
       server,
       {:transformer_forward, latents, timestep, prompt_embeds, pooled_embeds, guidance},
-      @call_timeout
+      call_timeout()
     )
   end
 
   def vae_decode(server, latents) do
-    GenServer.call(server, {:vae_decode, latents}, @call_timeout)
+    GenServer.call(server, {:vae_decode, latents}, call_timeout())
   end
 
   def vae_encode(server, image) do
-    GenServer.call(server, {:vae_encode, image}, @call_timeout)
+    GenServer.call(server, {:vae_encode, image}, call_timeout())
   end
 
   def generate_latents(server, height, width, seed \\ nil) do
-    GenServer.call(server, {:generate_latents, height, width, seed}, @call_timeout)
+    GenServer.call(server, {:generate_latents, height, width, seed}, call_timeout())
   end
 
   def get_model_info(server) do

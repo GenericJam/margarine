@@ -3,6 +3,18 @@ defmodule Margarine.Config do
   Configuration management for Margarine.
 
   Provides default values and validation for image generation parameters.
+
+  ## Configuration Options
+
+  You can configure Margarine in your `config/config.exs`:
+
+      config :margarine,
+        timeout: 600_000  # 10 minutes (in milliseconds)
+
+  Available options:
+  - `:timeout` - GenServer call timeout for model operations (default: 300_000ms / 5 minutes)
+    Increase this for slower systems or larger models. On memory-constrained systems (e.g., 24GB),
+    you may need to increase this to 600_000 (10 minutes) or higher.
   """
 
   @type generation_opts :: [
@@ -20,7 +32,7 @@ defmodule Margarine.Config do
     default_steps: 4,
     default_guidance_scale: 3.5,
     default_size: {1024, 1024},
-    timeout: 60_000,
+    timeout: 300_000,  # 5 minutes for model loading and generation
     enable_telemetry: true
   }
 

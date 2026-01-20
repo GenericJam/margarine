@@ -412,6 +412,27 @@ The first run takes 2-5 minutes to download Python and dependencies. Subsequent 
 - Use FLUX Schnell (4 steps) instead of Dev (28 steps)
 - First run downloads models (~12GB) which takes time
 
+### Timeout Errors
+
+If you're getting timeout errors on slower systems or with limited memory (e.g., 24GB):
+
+1. **Increase the timeout** in your `config/config.exs`:
+   ```elixir
+   config :margarine,
+     timeout: 600_000  # 10 minutes (default is 5 minutes)
+   ```
+
+2. **For very slow systems**, increase even further:
+   ```elixir
+   config :margarine,
+     timeout: 900_000  # 15 minutes
+   ```
+
+3. **Reduce memory pressure**:
+   - Use smaller image sizes: `size: {512, 512}` instead of `{1024, 1024}`
+   - Use SDXL models (7GB) instead of FLUX (14GB) on 24GB systems
+   - Close other applications to free up memory
+
 ## Documentation
 
 - **Interactive Tutorials**: See the [Interactive Tutorials](#-interactive-tutorials-recommended) section above
@@ -420,6 +441,7 @@ The first run takes 2-5 minutes to download Python and dependencies. Subsequent 
 - **Setup Guides**:
   - [EXLA Setup Guide for Linux (NVIDIA GPU)](EXLA_SETUP_LINUX_NVIDIA.md) - Complete CUDA setup instructions
   - [Torchx Setup Guide](TORCHX_SETUP.md) - Cross-platform PyTorch backend (experimental but promising)
+  - [24GB Systems Configuration Guide](CONFIG_24GB_SYSTEMS.md) - Recommended settings for memory-constrained systems
   - [Memory Limiting Guide](MEMORY_LIMITING_GUIDE.md) - Memory management and OOM prevention
 - **API Docs**: [hexdocs.pm/margarine](https://hexdocs.pm/margarine)
 - **Examples**: See `examples/` directory for runnable scripts
